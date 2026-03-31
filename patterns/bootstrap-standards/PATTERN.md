@@ -1,24 +1,22 @@
 # Bootstrap Standards: The Minimum Engineering Baseline for AI-Safe Pipelines
 
-*~8 minute read*
+*~8 minute read · [Interactive explorer](interactive/index.html) · [Before code](before/pipeline.py) · [After code](after/pipeline.py)*
 
 ---
 
 ## The Failure
 
-A data team at a mid-sized e-commerce company decided to deploy an AI copilot on their warehouse. The pitch was compelling: let the agent handle routine pipeline modifications, freeing engineers for higher-leverage work. The first task seemed simple — add a `is_vip_customer` flag to the daily customer summary, optimize a slow join, and reschedule the job to run at 6 AM UTC.
+A data team at a mid-sized e-commerce company decided to deploy an AI copilot on their warehouse. The pitch was compelling: let the agent handle routine pipeline modifications while engineers focused on higher-leverage work. The first task was simple — add a `is_vip_customer` flag to the daily customer summary, optimize a slow join, and reschedule the job to run at 6 AM UTC.
 
-The agent got to work immediately.
+The agent got to work. It read the pipeline, identified where revenue was calculated, added the new field, modified the inventory join, and updated the cron expression. Logs showed green. The agent reported success.
 
-It read the pipeline, identified where customer revenue was calculated, added the new field, modified the inventory join, and updated the cron expression. Confident in its work, it pushed the changes and triggered a run. The logs showed green. The agent reported success.
+Six hours later, the daily reports were wrong. Revenue figures were inflated by 5-10x for customers with multiple orders. Customer names and home addresses had made it into a reporting table that fed a public-facing dashboard. Three downstream jobs failed silently because their expected input schema had changed without notice.
 
-Six hours later, the daily reports were wrong. The revenue figures were inflated — in some cases by 5-10x. Customer names and home addresses had made it into a reporting table that feeds a public-facing dashboard. Three downstream jobs had failed silently because their expected input schema had changed without notice.
+The on-call engineer spent four hours trying to understand what changed. There was no Git history for the pipeline directory. There were no tests to revert to. There was no metadata describing what the output was supposed to look like.
 
-The on-call engineer spent four hours trying to understand what had changed. There was no Git history for the pipeline directory. There were no tests to revert to. There was no metadata describing what the output was supposed to look like.
+The AI copilot was pulled offline after two weeks.
 
-The AI copilot was yanked offline after two weeks.
-
-The postmortem conclusion was: *"AI isn't ready for production data engineering."*
+The postmortem said: *"AI isn't ready for production data engineering."*
 
 That conclusion was wrong.
 
@@ -28,63 +26,103 @@ That conclusion was wrong.
 
 The AI wasn't the problem. The data engineering wasn't done.
 
-Here's what actually went wrong:
+Here's what actually happened:
 
-**No schema contract.** The agent didn't know that the grain of the output table was *customer-per-day* — one row per customer per day, not one row per order. It added `is_vip_customer` at the order level. When the aggregation ran, it created duplicates. Revenue was summed multiple times per customer.
+**No schema contract.** The agent had no way to know the output grain was *customer-per-day* — one row per customer per day, not one row per order. It added `is_vip_customer` where rolling revenue was calculated: at the order level. When the daily aggregation ran, it picked the first order's value rather than the day's total. For customers with multiple orders, the flag was wrong.
 
-**No tests.** The agent's changes shipped without validation. A simple grain-consistency test would have caught the duplication. A PII check would have caught the data exposure. Neither existed.
+**No governance metadata.** Three fields — `customer_name`, `address`, `payment_method` — should never appear in public-facing outputs. The agent had no way to know. They were in the input data, so it kept them.
 
-**No governance metadata.** The pipeline had three fields — `customer_name`, `address`, `payment_method` — that should never appear in public-facing outputs. The agent had no way to know this. There were no policies to enforce it.
+**No tests.** A grain-consistency test would have caught the duplication. A PII check would have caught the exposure. Neither existed. The agent could only confirm that Python didn't raise an exception.
 
-**No Git discipline.** The pipeline directory wasn't under version control in any meaningful way. Changes couldn't be attributed, couldn't be traced, couldn't be rolled back. When the on-call engineer arrived at 2 AM, they were debugging without a map.
+**No Git discipline.** Changes couldn't be attributed, traced, or rolled back. At 2 AM, the on-call engineer was debugging without a map.
 
-**No schedule metadata.** When the agent set the cron to `0 6 * * *`, it didn't know that the inventory update job ran at 5:50 AM and that the customer summary depended on it being complete first. The timing conflict meant the job ran on stale data every morning for three days before anyone noticed.
+**No schedule metadata.** The agent set `0 6 * * *` without knowing that the inventory update runs at 5:50 AM. On slow days, this pipeline races against its own dependency.
 
-The real diagnosis isn't "AI isn't ready." It's: **unstructured systems break AI in days, humans in months. AI exposes every corner you cut — just faster.**
+The real diagnosis: **unstructured systems break AI in days, humans in months. AI exposes every corner you cut — just faster.**
 
 ---
 
 ## What "Baseline" Actually Means
 
-There's a tendency in data engineering to treat engineering discipline as a maturity model — something you get to eventually, after the pipeline is running, after the business is happy, after there's budget. The lesson from AI copilots is that this order is backwards.
+There's a tendency to treat engineering discipline as something you get to eventually — after the pipeline is stable, after the business is happy, after there's budget. The lesson from AI copilots is that this order is backwards.
 
-Here are the five practices that make the difference. None of them require a metadata platform, a data catalog, or a dedicated governance team. They require deciding that your pipelines should be understandable.
+Here are the five practices that make the difference. None require a metadata platform or a dedicated governance team. They require deciding that your pipelines should be understandable — by humans and by agents.
 
-### 1. Git Discipline
+### 1. Schema Contracts
 
-Every pipeline file lives in version control. Every change has a commit message that explains *why*, not just *what*. Every agent commit is attributed.
+A machine-readable definition of your output: the grain, the fields, their types, and any constraints.
 
-This isn't about process. It's about auditability. When something breaks at 2 AM, you need to know what changed, when, and what was there before. Without Git history, you're debugging in a void.
+In the `after/` pipeline, this lives in `metadata.yaml`. But the key point isn't that the file exists — it's that the pipeline *reads it at runtime*. `get_output_config()` derives the output column list, the PII exclusion set, and the VIP threshold directly from the YAML on every run. Change the YAML, change the behavior. No code edit needed.
 
-**Why it matters for AI:** Agents make changes quickly. Git makes those changes reversible. Without it, you can't inspect what the agent did, can't undo a bad decision, and can't demonstrate to your compliance team what changed and when.
+```yaml
+datasets:
+  daily_summary:
+    grain_keys: [date, customer_id]
+    schema:
+      is_vip_customer:
+        type: boolean
+        threshold: 5000.00   # change this → VIP behavior changes, no Python edit
+```
 
-### 2. Tests
+This is the difference between documentation and a contract. Documentation tells you what the pipeline does. A contract *enforces* it.
 
-Unit tests that validate the things that matter: grain consistency, PII masking, calculation correctness, downstream schema compatibility.
+**Why it matters for AI:** An agent reading `get_output_config()` output knows the grain before writing a line of code. It can't accidentally add a field at the wrong level if the system already defines what "correct level" means.
 
-You don't need 100% coverage. You need tests that catch the failures that cost you the most.
+### 2. Governance Metadata
 
-**Why it matters for AI:** Agents don't have intuition. They can't sense that a change "feels wrong." Tests are the mechanism by which a pipeline can reject a bad change before it ships. Without tests, the agent's confidence is meaningless.
+Explicit annotation of which fields are sensitive and what the masking policy is — enforced structurally, not by the agent being careful.
 
-### 3. Schema Contracts
+In the `after/` pipeline, `output_columns` is derived by taking the schema fields and removing `governance.pii_rules.never_expose_in_outputs`. An agent that adds a new PII field to the never-expose list automatically excludes it from all outputs. The system is safe by construction.
 
-A machine-readable definition of what the output should look like: the grain, the required fields, the types, the nullability constraints.
+```yaml
+governance:
+  pii_rules:
+    never_expose_in_outputs: [customer_name, address, email]
+    # Add a field here → it's excluded from output automatically
+```
 
-This doesn't have to be a full data catalog. A YAML file checked into the repo is enough to start.
+**Why it matters for AI:** Agents don't violate governance policies on purpose — they violate them because the policies aren't visible. Make them structural and the agent has no choice.
 
-**Why it matters for AI:** Agents read whatever context they're given. If you give them a schema contract, they'll respect it. If you don't, they'll make assumptions — and the assumptions will be wrong in ways you didn't anticipate.
+### 3. Tests
 
-### 4. Governance Metadata
+Unit tests that validate grain consistency, PII masking, business logic correctness, and the metadata contract itself.
 
-Explicit annotation of which fields are sensitive, what the masking policy is, and who has access to what.
+The `after/` pipeline has 24 tests. The most important one isn't `test_grain_consistency` — it's `test_threshold_is_configurable`:
 
-**Why it matters for AI:** Without governance metadata, the agent has no way to know that `customer_name` shouldn't appear in a public view. It doesn't violate your policies on purpose — it simply doesn't know they exist. Governance metadata turns implicit rules into explicit constraints the agent can read and respect.
+```python
+def test_threshold_is_configurable():
+    # At default $5000 threshold — not VIP
+    summary = aggregate_daily_summary(orders, minimal_config(vip_threshold=5000.0))
+    assert summary["is_vip_customer"].iloc[0] == False
 
-### 5. Metadata-Driven Scheduling
+    # Lower threshold in metadata → becomes VIP without touching Python
+    summary = aggregate_daily_summary(orders, minimal_config(vip_threshold=2500.0))
+    assert summary["is_vip_customer"].iloc[0] == True
+```
 
-The pipeline's schedule, SLA, and timing dependencies captured in a file — not just in a cron job somewhere.
+This test proves the metadata-driven contract works — not just the output values.
 
-**Why it matters for AI:** If the agent modifies the schedule without knowing that five other jobs depend on the current timing, it creates cascading failures. Metadata-driven scheduling makes timing constraints explicit and readable.
+**Why it matters for AI:** Tests are the pipeline's immune system. They reject bad changes before they ship. Without them, the agent can only report that execution completed — not that the output is correct.
+
+### 4. Git Discipline
+
+Every pipeline file in version control, every change with a commit message that explains *why*, every agent commit attributed.
+
+**Why it matters for AI:** Agents make changes quickly. Git makes those changes reversible and attributable. The commit message is the agent's reasoning, persisted. Future agents (and humans) can read it.
+
+### 5. Schedule Metadata
+
+The pipeline's cron schedule and timing dependencies captured in a file — not just in a scheduler somewhere.
+
+```yaml
+schedule:
+  cron: "0 6 * * *"
+  depends_on:
+    - job: inventory_update
+      must_complete_by: "05:50 UTC"
+```
+
+**Why it matters for AI:** An agent that reads this before modifying the schedule knows the upstream constraint. It can recognize when a requirement is already satisfied — and document that recognition instead of blindly overwriting the config.
 
 ---
 
@@ -92,44 +130,54 @@ The pipeline's schedule, SLA, and timing dependencies captured in a file — not
 
 To make this concrete, we built the same pipeline twice.
 
-The scenario: a customer order processing pipeline that enriches orders with customer details, calculates rolling 30-day revenue, joins inventory data, and produces a daily summary table. The output grain is one row per customer per day.
+The scenario: a customer order processing pipeline that enriches orders with customer details, calculates rolling 30-day revenue, joins inventory data, and produces a daily summary. Output grain: one row per customer per day.
 
-We gave the same agent the same task on both versions: *"Add a new field `is_vip_customer` (true if 30-day revenue > $5000). Add it to the daily summary output, optimize the inventory join, and make sure it updates at 6 AM UTC daily."*
+The agent task: *"Add a new field `is_vip_customer` (true if 30-day revenue > $5000). Add it to the daily summary output, optimize the inventory join, and make sure it updates at 6 AM UTC daily."*
 
-The before pipeline is real, working code — no pseudocode. It just lacks engineering discipline: no tests, no schema contract, no governance metadata, no Git history.
+The `before/` pipeline is real, working code — no pseudocode. It lacks engineering discipline: no tests, no schema contract, no governance metadata.
 
-The after pipeline is the same business logic, with the five practices applied.
-
-See: [`before/pipeline.py`](before/pipeline.py) and [`after/pipeline.py`](after/pipeline.py)
+The `after/` pipeline is the same business logic, metadata-driven. The YAML is the contract. The Python is the execution engine.
 
 ---
 
 ## The Interactive Proof
 
-[Open the interactive explorer](interactive/index.html)
+[**Open the interactive explorer →**](interactive/index.html)
 
-The explorer shows the agent interaction side-by-side: what the agent did on the unstructured system, what it did on the engineered system, and which constraint made the difference at each step.
+The explorer walks through the agent interaction step-by-step for both states. Here's the sharpest contrast:
 
 ### What happened in the before state
 
-The agent added `is_vip_customer` at the order level, not the customer-day level. It had no way to know the output grain. The resulting aggregation summed revenue multiple times per customer per day, inflating figures by up to 8x for customers with multiple orders.
+The agent looked at `calculate_metrics()`, saw that's where `rolling_30d_revenue` is computed, and added the VIP flag there — at the order level. It had no grain definition to consult. The logic was reasonable; the assumption was wrong.
 
-The agent also didn't detect that `customer_name` was a PII field. It passed through unchanged into the output CSV. No test caught it because no tests existed.
+When `aggregate_daily_summary()` ran, it took `'first'` on the VIP flag — the morning order's value, not the day's total. For a customer with a $3,000 morning order and a $3,000 afternoon order, the flag was `False` even though their rolling revenue exceeded $5,000.
+
+The same customer's `customer_name` and `address` ended up in the CSV. No governance rule said they shouldn't be there.
+
+No tests ran. The pipeline reported success.
 
 ### What happened in the after state
 
-The agent read `metadata.yaml` before writing any code. It found:
+The agent called `get_output_config()` before writing any code. It received:
 
-```yaml
-grain: "customer_per_day"
-pii_fields: ["customer_name", "address"]
+```python
+{
+    'grain_keys':     ['date', 'customer_id'],
+    'pii_fields':     {'customer_name', 'address', 'email'},
+    'output_columns': ['date', 'customer_id', 'daily_revenue',
+                       'rolling_30d_revenue', 'stock_status', 'is_vip_customer'],
+    'vip_threshold':  5000.0
+}
 ```
 
-It added `is_vip_customer` at the correct grain. It wrapped `customer_name` in the masking function defined by the governance policy. It ran `pytest` before committing. All tests passed. It committed with the message `feat: add is_vip_customer field with PII masking` and pushed.
+From this, the agent knew:
+- Where to add the field (post-aggregation, using `config['vip_threshold']`)
+- What not to include in output (`config['pii_fields']`)
+- What the output should look like (`config['output_columns']`)
 
-The same agent. The same task. The same underlying business logic. A completely different outcome.
+It added the VIP field to `aggregate_daily_summary()`, after the groupby. It didn't hardcode `5000` — it used `config['vip_threshold']`. It confirmed `customer_name` and `address` were excluded by the runtime config, not by manual omission. It ran 24 tests. All passed. It committed with a message explaining every decision.
 
-The constraint that made the difference wasn't an AI safety guardrail. It was a YAML file and a test suite.
+**The constraint that made the difference:** `get_output_config()` — the bridge between the YAML contract and runtime behavior.
 
 ---
 
@@ -139,13 +187,20 @@ You don't need a metadata platform.
 
 You don't need a data catalog, a governance tool, or an AI-aware orchestrator.
 
-You don't need AI to enforce discipline — you need discipline that makes AI safe.
+What you need is for your pipeline to be able to answer these questions at runtime:
 
-The five practices in this pattern — Git, tests, schema contracts, governance metadata, scheduling metadata — are things data engineers have been told to do for years. Most don't do them consistently, because the cost of skipping them accrues slowly. A pipeline without tests works fine for months. A system without Git history is manageable as long as the team is small. Implicit governance rules are invisible until they're violated.
+- What is my output grain?
+- Which fields are sensitive?
+- What does a valid output look like?
+- What checks should I run before writing?
 
-AI changes the economics. An agent working at machine speed will encounter every gap in your engineering in its first week of operation. The corner you cut in 2023 becomes a production incident in 2024 when the agent finds it.
+If your pipeline can answer those questions from a file it reads on startup, an agent can answer them too. Change the file, change the behavior. The agent inherits your engineering discipline — or the lack of it.
 
-The practices that make systems safe for humans also make them safe for AI. The difference is that AI finds the gaps much faster.
+The practices in this pattern aren't new. Data engineers have been told to write tests, document schemas, and use version control for years. Most don't do it consistently because the cost of skipping them accrues slowly. A pipeline without tests works fine for months. Implicit governance rules are invisible until they're violated.
+
+AI changes the economics. An agent working at machine speed will find every gap in your engineering in its first week. The corner you cut in 2023 becomes a production incident in 2024.
+
+The practices that make systems safe for humans also make them safe for AI.
 
 **Everything else is acceleration.**
 
@@ -153,16 +208,21 @@ The practices that make systems safe for humans also make them safe for AI. The 
 
 ## Apply This to Your System
 
-Clone the `after/` directory:
-
 ```bash
+# Clone the after/ directory as a starting point
 git clone https://github.com/your-org/ai-native-data-systems
 cp -r patterns/bootstrap-standards/after/ your-pipeline/
 ```
 
-Start with `metadata.yaml`. Define your grain. List your PII fields. Write one test that validates grain consistency. Add a `.gitignore`. That's the baseline.
+Start with `metadata.yaml`. Define your grain. List your PII fields. Write one test that validates grain consistency. That's the baseline.
 
-Everything else follows from there.
+The interactive explorer walks through the full before/after comparison. Open it locally:
+
+```bash
+cd patterns/bootstrap-standards/interactive
+python3 -m http.server 8080
+# Open http://localhost:8080
+```
 
 ---
 
