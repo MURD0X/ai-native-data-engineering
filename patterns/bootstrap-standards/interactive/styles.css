@@ -380,38 +380,6 @@ body {
   color: var(--color-text-secondary);
 }
 
-/* ---- Controls Filter Bar ---- */
-
-.controls-filter {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 1rem 1.5rem;
-  margin-bottom: var(--section-gap);
-  box-shadow: var(--shadow);
-  display: flex;
-  align-items: center;
-  gap: 1.25rem;
-  flex-wrap: wrap;
-}
-
-.controls-filter-label {
-  font-size: 0.63rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--color-text-tertiary);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.controls-filter-divider {
-  width: 1px;
-  height: 20px;
-  background: var(--color-border);
-  flex-shrink: 0;
-}
-
 .constraints-list {
   display: flex;
   flex-wrap: wrap;
@@ -1221,6 +1189,122 @@ body {
 .op { color: #67e8f9; }   /* operator */
 .dc { color: #525566; font-style: italic; }  /* docstring */
 
+/* ---- Reading guide (bottom of finding callout) ---- */
+
+.finding-guide {
+  font-size: 0.76rem;
+  color: rgba(255,255,255,0.38);
+  margin-top: 1.125rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  letter-spacing: 0.01em;
+}
+
+/* ---- Code expand/collapse footer ---- */
+
+.code-expand-footer {
+  background: #13151e;
+  border-top: 1px solid #252736;
+  padding: 0.5rem 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.code-focused-note {
+  font-size: 0.68rem;
+  color: #525566;
+  font-family: var(--font-mono);
+}
+
+.expand-btn {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: #8b90a8;
+  background: transparent;
+  border: 1px solid #2a2d3e;
+  border-radius: var(--radius);
+  padding: 0.25rem 0.65rem;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  transition: all 0.12s;
+  white-space: nowrap;
+}
+
+.expand-btn:hover {
+  color: #cdd6f4;
+  border-color: #6c7086;
+}
+
+/* ---- Scenario Verdict Card ---- */
+
+.verdict-card {
+  border-radius: var(--radius-lg);
+  padding: 1rem 1.125rem;
+  margin-top: 1rem;
+  border: 1px solid;
+}
+
+.verdict-card.failure {
+  background: var(--color-failure-bg);
+  border-color: var(--color-failure-border);
+}
+
+.verdict-card.success {
+  background: var(--color-success-bg);
+  border-color: var(--color-success-border);
+}
+
+.verdict-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: 0.625rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid;
+}
+
+.verdict-card.failure .verdict-label {
+  color: var(--color-failure);
+  border-color: var(--color-failure-border);
+}
+
+.verdict-card.success .verdict-label {
+  color: var(--color-primary);
+  border-color: var(--color-success-border);
+}
+
+.verdict-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid rgba(0,0,0,0.04);
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+.verdict-item:last-child { border-bottom: none; }
+
+.verdict-icon {
+  font-size: 0.65rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 0.25rem;
+}
+
+.verdict-item.failure .verdict-icon { color: var(--color-failure); }
+.verdict-item.success .verdict-icon { color: var(--color-primary); }
+
+.verdict-text { color: var(--color-text-secondary); }
+
+.verdict-item.failure .verdict-text strong,
+.verdict-item.failure .verdict-text em { color: var(--color-failure); }
+.verdict-item.success .verdict-text strong,
+.verdict-item.success .verdict-text em { color: var(--color-primary); }
+
 /* ---- Responsive ---- */
 
 @media (max-width: 720px) {
@@ -1230,8 +1314,6 @@ body {
   .finding-stats { gap: 1.25rem; flex-wrap: wrap; }
   .brief-grid { grid-template-columns: 1fr; }
   .brief-meta { padding-left: 0; border-left: none; border-top: 1px solid var(--color-border); padding-top: 1rem; min-width: unset; }
-  .controls-filter { flex-direction: column; align-items: flex-start; }
-  .controls-filter-divider { width: 100%; height: 1px; }
   .closing-statement { padding: 1.5rem; }
   .closing-quote { font-size: 1rem; }
 }
