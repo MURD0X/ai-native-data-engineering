@@ -1,0 +1,36 @@
+name: Pipeline CI
+
+on:
+  push:
+    paths:
+      - "patterns/bootstrap-standards/after/**"
+  pull_request:
+    paths:
+      - "patterns/bootstrap-standards/after/**"
+
+jobs:
+  test:
+    name: Test pipeline
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: patterns/bootstrap-standards/after/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r patterns/bootstrap-standards/after/requirements.txt
+
+      - name: Run tests
+        working-directory: patterns/bootstrap-standards/after
+        run: pytest tests/ -v --tb=short
+
+      - name: Validate metadata schema
+        working-directory: patterns/bootstrap-standards/after
+        run: python -c "import yaml; yaml.safe_load(open('metadata.yaml')); print('metadata.yaml is valid')"
