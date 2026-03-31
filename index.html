@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI-Native Data Systems</title>
+  <meta name="description" content="Engineering discipline is the prerequisite for AI-safe data pipelines. A pattern library proving it through working code and interactive examples.">
+  <meta property="og:title" content="AI-Native Data Systems">
+  <meta property="og:description" content="Unstructured data breaks AI in days, humans in months. The solution isn't more AI — it's engineering discipline.">
+  <meta property="og:type" content="website">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --green:       #0f6e56;
+      --green-light: #f0fdf8;
+      --green-mid:   #34d399;
+      --red:         #a32d2d;
+      --red-light:   #fff5f5;
+      --amber:       #ba7517;
+      --amber-light: #fffbeb;
+      --gray:        #6e7681;
+      --gray-light:  #f6f8fa;
+      --ink:         #0d1117;
+      --ink-mid:     #1a1d21;
+      --ink-soft:    #404347;
+      --muted:       #8b949e;
+      --border:      #e1e4e8;
+      --surface:     #ffffff;
+      --mono: 'JetBrains Mono', 'Fira Code', monospace;
+      --sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: var(--sans);
+      color: var(--ink);
+      background: var(--surface);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Nav ─────────────────────────────────── */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0;
+      z-index: 100;
+      background: rgba(13, 17, 23, 0.92);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      padding: 0 2rem;
+    }
+    .nav-inner {
+      max-width: 1100px; margin: 0 auto;
+      height: 52px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .nav-logo {
+      font-size: 0.82rem; font-weight: 600;
+      color: rgba(255,255,255,0.9); letter-spacing: 0.02em;
+      text-decoration: none;
+    }
+    .nav-links { display: flex; gap: 1.5rem; align-items: center; }
+    .nav-links a {
+      font-size: 0.8rem; color: rgba(255,255,255,0.6);
+      text-decoration: none; transition: color 0.15s;
+    }
+    .nav-links a:hover { color: rgba(255,255,255,0.9); }
+    .nav-cta {
+      font-size: 0.78rem; font-weight: 600;
+      background: var(--green); color: white !important;
+      padding: 0.35rem 0.9rem; border-radius: 6px;
+      transition: background 0.15s !important;
+    }
+    .nav-cta:hover { background: #0a5a45 !important; }
+
+    /* ── Hero ────────────────────────────────── */
+    .hero {
+      background: var(--ink);
+      padding: 140px 2rem 100px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(15,110,86,0.18) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .hero-eyebrow {
+      display: inline-block;
+      font-family: var(--mono); font-size: 0.75rem;
+      color: var(--green-mid); letter-spacing: 0.1em;
+      text-transform: uppercase; margin-bottom: 1.5rem;
+      border: 1px solid rgba(52, 211, 153, 0.25);
+      padding: 0.3rem 0.9rem; border-radius: 100px;
+    }
+    .hero h1 {
+      font-size: clamp(2rem, 5vw, 3.5rem);
+      font-weight: 800; line-height: 1.15;
+      color: white; max-width: 820px; margin: 0 auto 1.5rem;
+      letter-spacing: -0.02em;
+    }
+    .hero h1 em {
+      font-style: normal;
+      background: linear-gradient(135deg, #34d399, #0f6e56);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .hero-sub {
+      font-size: clamp(1rem, 2vw, 1.2rem);
+      color: rgba(255,255,255,0.55); max-width: 560px;
+      margin: 0 auto 2.5rem; line-height: 1.7;
+    }
+    .hero-actions { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+    .btn-primary {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      background: var(--green); color: white;
+      font-size: 0.95rem; font-weight: 600;
+      padding: 0.75rem 1.75rem; border-radius: 8px;
+      text-decoration: none; transition: all 0.15s;
+      box-shadow: 0 0 0 0 rgba(15,110,86,0);
+    }
+    .btn-primary:hover {
+      background: #0a5a45;
+      box-shadow: 0 0 0 4px rgba(15,110,86,0.2);
+      transform: translateY(-1px);
+    }
+    .btn-secondary {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.85);
+      font-size: 0.95rem; font-weight: 500;
+      padding: 0.75rem 1.75rem; border-radius: 8px;
+      text-decoration: none; border: 1px solid rgba(255,255,255,0.12);
+      transition: all 0.15s;
+    }
+    .btn-secondary:hover {
+      background: rgba(255,255,255,0.12);
+      border-color: rgba(255,255,255,0.25);
+      transform: translateY(-1px);
+    }
+    .hero-stat-row {
+      display: flex; gap: 2.5rem; justify-content: center; flex-wrap: wrap;
+      margin-top: 4rem; padding-top: 4rem;
+      border-top: 1px solid rgba(255,255,255,0.07);
+    }
+    .hero-stat { text-align: center; }
+    .hero-stat-num {
+      font-size: 1.8rem; font-weight: 800; color: white;
+      font-variant-numeric: tabular-nums;
+    }
+    .hero-stat-num span { color: var(--green-mid); }
+    .hero-stat-label {
+      font-size: 0.78rem; color: rgba(255,255,255,0.45);
+      margin-top: 0.2rem; letter-spacing: 0.02em;
+    }
+
+    /* ── Sections ────────────────────────────── */
+    section { padding: 5rem 2rem; }
+    .section-inner { max-width: 1100px; margin: 0 auto; }
+    .section-label {
+      font-family: var(--mono); font-size: 0.72rem;
+      text-transform: uppercase; letter-spacing: 0.1em;
+      color: var(--green); font-weight: 500; margin-bottom: 0.75rem;
+    }
+    h2 {
+      font-size: clamp(1.5rem, 3vw, 2.2rem);
+      font-weight: 800; line-height: 1.2;
+      letter-spacing: -0.02em; color: var(--ink);
+      margin-bottom: 1.25rem;
+    }
+    .section-lead {
+      font-size: 1.05rem; color: var(--ink-soft);
+      max-width: 620px; line-height: 1.75;
+      margin-bottom: 3rem;
+    }
+
+    /* ── Failure story ───────────────────────── */
+    .story-section { background: var(--gray-light); }
+    .story-blockquote {
+      border-left: 3px solid var(--red);
+      padding: 1rem 1.5rem;
+      background: var(--red-light);
+      border-radius: 0 8px 8px 0;
+      margin: 2rem 0;
+    }
+    .story-blockquote p {
+      font-size: 1rem; font-style: italic;
+      color: var(--red); line-height: 1.7;
+    }
+    .story-body { max-width: 720px; }
+    .story-body p {
+      font-size: 1rem; color: var(--ink-soft);
+      line-height: 1.8; margin-bottom: 1rem;
+    }
+    .story-body strong { color: var(--ink); font-weight: 600; }
+
+    /* ── 5 Failures grid ─────────────────────── */
+    .failures-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.25rem; margin-top: 1rem;
+    }
+    .failure-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px; padding: 1.5rem;
+      position: relative; overflow: hidden;
+    }
+    .failure-card::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0;
+      height: 3px; background: var(--red);
+    }
+    .failure-card.fixed::before { background: var(--green); }
+    .failure-number {
+      font-family: var(--mono); font-size: 0.7rem;
+      color: var(--muted); margin-bottom: 0.75rem;
+      letter-spacing: 0.05em;
+    }
+    .failure-card h3 {
+      font-size: 0.95rem; font-weight: 700;
+      color: var(--ink); margin-bottom: 0.5rem;
+    }
+    .failure-before {
+      font-size: 0.82rem; color: var(--red);
+      background: var(--red-light);
+      border: 1px solid rgba(163,45,45,0.15);
+      border-radius: 6px; padding: 0.6rem 0.75rem;
+      margin-bottom: 0.625rem; line-height: 1.5;
+    }
+    .failure-after {
+      font-size: 0.82rem; color: var(--green);
+      background: var(--green-light);
+      border: 1px solid rgba(15,110,86,0.15);
+      border-radius: 6px; padding: 0.6rem 0.75rem;
+      line-height: 1.5;
+    }
+    .failure-label {
+      font-size: 0.65rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.07em;
+      display: block; margin-bottom: 0.2rem;
+    }
+    .failure-label.before { color: var(--red); }
+    .failure-label.after  { color: var(--green); }
+
+    /* ── The insight / code demo ─────────────── */
+    .insight-section { background: var(--ink); }
+    .insight-section h2 { color: white; }
+    .insight-section .section-lead { color: rgba(255,255,255,0.6); }
+    .insight-section .section-label { color: var(--green-mid); }
+    .code-demo {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem; margin-top: 2rem;
+    }
+    @media (max-width: 700px) { .code-demo { grid-template-columns: 1fr; } }
+    .code-panel {
+      border-radius: 10px; overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+    .code-panel-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0.7rem 1rem;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .code-panel-header.before { background: rgba(110,118,129,0.15); }
+    .code-panel-header.after  { background: rgba(15,110,86,0.2); }
+    .code-panel-title {
+      font-size: 0.75rem; font-weight: 600;
+      letter-spacing: 0.04em;
+    }
+    .code-panel-header.before .code-panel-title { color: var(--muted); }
+    .code-panel-header.after  .code-panel-title { color: var(--green-mid); }
+    .code-panel-badge {
+      font-family: var(--mono); font-size: 0.65rem;
+      padding: 0.15rem 0.5rem; border-radius: 100px;
+    }
+    .code-panel-header.before .code-panel-badge {
+      background: rgba(110,118,129,0.2); color: var(--muted);
+    }
+    .code-panel-header.after .code-panel-badge {
+      background: rgba(15,110,86,0.3); color: var(--green-mid);
+    }
+    .code-panel pre {
+      padding: 1.25rem; margin: 0;
+      font-family: var(--mono); font-size: 0.75rem;
+      line-height: 1.7; color: #cdd6f4;
+      background: #1e1e2e;
+      overflow-x: auto;
+    }
+    .code-cm  { color: #585b70; font-style: italic; }
+    .code-kw  { color: #cba6f7; }
+    .code-fn  { color: #89b4fa; }
+    .code-st  { color: #a6e3a1; }
+    .code-nb  { color: #fab387; }
+    .code-hl  { background: rgba(52,211,153,0.12); display: block; margin: 0 -1.25rem; padding: 0 1.25rem; border-left: 2px solid var(--green-mid); }
+    .code-err { background: rgba(163,45,45,0.2); display: block; margin: 0 -1.25rem; padding: 0 1.25rem; border-left: 2px solid var(--red); }
+
+    .insight-callout {
+      margin-top: 2rem; padding: 1.5rem 2rem;
+      background: rgba(15,110,86,0.15);
+      border: 1px solid rgba(52,211,153,0.2);
+      border-radius: 10px;
+      display: flex; align-items: flex-start; gap: 1rem;
+    }
+    .insight-callout-icon {
+      font-size: 1.5rem; flex-shrink: 0; margin-top: 0.1rem;
+    }
+    .insight-callout p {
+      font-size: 0.95rem; color: rgba(255,255,255,0.75);
+      line-height: 1.7;
+    }
+    .insight-callout strong { color: var(--green-mid); }
+
+    /* ── Pattern card ────────────────────────── */
+    .patterns-section { background: var(--gray-light); }
+    .pattern-card {
+      background: var(--surface);
+      border: 1px solid var(--border); border-radius: 12px;
+      overflow: hidden; max-width: 780px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .pattern-card-header {
+      padding: 1.5rem 1.75rem;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 1rem;
+    }
+    .pattern-status {
+      font-size: 0.68rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.07em;
+      padding: 0.2rem 0.6rem; border-radius: 100px;
+      background: var(--green); color: white;
+    }
+    .pattern-card-header h3 { font-size: 1.15rem; font-weight: 700; }
+    .pattern-card-body { padding: 1.5rem 1.75rem; }
+    .pattern-card-body p {
+      font-size: 0.95rem; color: var(--ink-soft);
+      line-height: 1.7; margin-bottom: 1.25rem;
+    }
+    .pattern-links { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+    .pattern-link {
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      font-size: 0.82rem; font-weight: 500;
+      padding: 0.4rem 0.875rem; border-radius: 6px;
+      text-decoration: none; transition: all 0.15s;
+      border: 1px solid;
+    }
+    .pattern-link.primary {
+      background: var(--green); color: white; border-color: var(--green);
+    }
+    .pattern-link.primary:hover { background: #0a5a45; }
+    .pattern-link.secondary {
+      background: transparent; color: var(--ink-soft);
+      border-color: var(--border);
+    }
+    .pattern-link.secondary:hover {
+      background: var(--gray-light); color: var(--ink);
+    }
+    .pattern-what-changed {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 0.625rem; margin-bottom: 1.25rem;
+    }
+    @media (max-width: 600px) { .pattern-what-changed { grid-template-columns: 1fr; } }
+    .change-item {
+      font-size: 0.8rem; padding: 0.5rem 0.75rem;
+      border-radius: 6px; line-height: 1.4;
+      display: flex; align-items: flex-start; gap: 0.5rem;
+    }
+    .change-item.red {
+      background: var(--red-light);
+      color: var(--red);
+      border: 1px solid rgba(163,45,45,0.12);
+    }
+    .change-item.green {
+      background: var(--green-light);
+      color: var(--green);
+      border: 1px solid rgba(15,110,86,0.12);
+    }
+    .change-icon { flex-shrink: 0; font-weight: 700; }
+
+    /* ── Philosophy ──────────────────────────── */
+    .philosophy-section { background: var(--surface); }
+    .philosophy-grid {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 3rem; align-items: start;
+    }
+    @media (max-width: 800px) { .philosophy-grid { grid-template-columns: 1fr; } }
+    .philosophy-text p {
+      font-size: 1rem; color: var(--ink-soft);
+      line-height: 1.85; margin-bottom: 1rem;
+    }
+    .philosophy-text p strong { color: var(--ink); }
+    .philosophy-principles { display: flex; flex-direction: column; gap: 1rem; }
+    .principle {
+      padding: 1.25rem; border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--gray-light);
+    }
+    .principle-title {
+      font-size: 0.88rem; font-weight: 700;
+      color: var(--ink); margin-bottom: 0.375rem;
+      display: flex; align-items: center; gap: 0.5rem;
+    }
+    .principle-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--green); flex-shrink: 0;
+    }
+    .principle p {
+      font-size: 0.82rem; color: var(--ink-soft); line-height: 1.6;
+    }
+
+    /* ── CTA ─────────────────────────────────── */
+    .cta-section {
+      background: linear-gradient(135deg, #0a5a45 0%, #0d1117 60%);
+      text-align: center; padding: 6rem 2rem;
+    }
+    .cta-section h2 { color: white; margin-bottom: 1rem; }
+    .cta-section p {
+      font-size: 1.05rem; color: rgba(255,255,255,0.6);
+      max-width: 480px; margin: 0 auto 2.5rem; line-height: 1.7;
+    }
+    .cta-actions { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+
+    /* ── Footer ──────────────────────────────── */
+    footer {
+      background: var(--ink); padding: 2rem;
+      text-align: center;
+      border-top: 1px solid rgba(255,255,255,0.06);
+    }
+    footer p {
+      font-size: 0.8rem; color: rgba(255,255,255,0.35);
+    }
+    footer a {
+      color: rgba(255,255,255,0.5); text-decoration: none;
+    }
+    footer a:hover { color: rgba(255,255,255,0.8); }
+
+    /* ── Utilities ───────────────────────────── */
+    @media (max-width: 600px) {
+      .nav-links .hide-sm { display: none; }
+      .hero { padding: 120px 1.5rem 80px; }
+      section { padding: 3.5rem 1.5rem; }
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-inner">
+    <a href="/" class="nav-logo">AI-Native Data Systems</a>
+    <div class="nav-links">
+      <a href="#patterns" class="hide-sm">Patterns</a>
+      <a href="#philosophy" class="hide-sm">Philosophy</a>
+      <a href="https://github.com/MURD0X/ai-native-data-engineering" class="hide-sm">GitHub</a>
+      <a href="patterns/bootstrap-standards/interactive/index.html" class="nav-cta">Open Explorer →</a>
+    </div>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="hero-eyebrow">AI-Native Data Systems</div>
+  <h1>The solution isn't more AI.<br>It's <em>engineering discipline</em>.</h1>
+  <p class="hero-sub">
+    Unstructured data breaks AI in days, humans in months.
+    This is a pattern library that proves it — through working code,
+    interactive examples, and real agent interaction transcripts.
+  </p>
+  <div class="hero-actions">
+    <a href="patterns/bootstrap-standards/interactive/index.html" class="btn-primary">
+      Open Interactive Explorer →
+    </a>
+    <a href="https://github.com/MURD0X/ai-native-data-engineering" class="btn-secondary">
+      View on GitHub
+    </a>
+  </div>
+  <div class="hero-stat-row">
+    <div class="hero-stat">
+      <div class="hero-stat-num">5<span>×</span></div>
+      <div class="hero-stat-label">failure modes demonstrated</div>
+    </div>
+    <div class="hero-stat">
+      <div class="hero-stat-num">2<span>×</span></div>
+      <div class="hero-stat-label">same pipeline, same agent, different outcome</div>
+    </div>
+    <div class="hero-stat">
+      <div class="hero-stat-num">24<span> tests</span></div>
+      <div class="hero-stat-label">validating the metadata contract</div>
+    </div>
+    <div class="hero-stat">
+      <div class="hero-stat-num">0<span> frameworks</span></div>
+      <div class="hero-stat-label">required to make this work</div>
+    </div>
+  </div>
+</section>
+
+<!-- The Failure Story -->
+<section class="story-section">
+  <div class="section-inner">
+    <div class="section-label">The Failure</div>
+    <h2>A two-week AI deployment.<br>Four hours of 2 AM debugging.</h2>
+    <div class="story-body">
+      <p>
+        A data team deployed an AI copilot on their warehouse. The first task was routine:
+        add a VIP customer flag to the daily summary, optimize a join, reschedule to 6 AM UTC.
+        The agent reported success.
+      </p>
+      <div class="story-blockquote">
+        <p>
+          "Six hours later, revenue figures were inflated 5–10×. Customer names and home addresses
+          had made it into a public-facing dashboard. Three downstream jobs had failed silently.
+          The on-call engineer spent four hours trying to understand what changed."
+        </p>
+      </div>
+      <p>
+        No Git history. No tests. No schema contract. No governance rules. The agent had
+        everything it needed to execute — and nothing it needed to do it <strong>correctly</strong>.
+      </p>
+      <p>
+        The postmortem concluded: <strong>"AI isn't ready for production data engineering."</strong>
+      </p>
+      <p>
+        That conclusion was wrong. The AI didn't fail. The data engineering wasn't done.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- 5 Failure Modes -->
+<section>
+  <div class="section-inner">
+    <div class="section-label">The Diagnosis</div>
+    <h2>Five missing constraints.<br>Five predictable failures.</h2>
+    <p class="section-lead">
+      None of these are AI failures. They're engineering gaps that AI exposed faster than a human would have.
+    </p>
+    <div class="failures-grid">
+      <div class="failure-card">
+        <div class="failure-number">01 / SCHEMA CONTRACT</div>
+        <h3>No grain definition</h3>
+        <div class="failure-before">
+          <span class="failure-label before">Without it</span>
+          Agent adds <code>is_vip_customer</code> at the order level — not customer-per-day. Revenue inflated 5–10× for multi-order customers.
+        </div>
+        <div class="failure-after">
+          <span class="failure-label after">With it</span>
+          <code>get_output_config()</code> returns <code>grain_keys: [date, customer_id]</code>. Agent adds field post-aggregation. Correct on first run.
+        </div>
+      </div>
+      <div class="failure-card">
+        <div class="failure-number">02 / GOVERNANCE METADATA</div>
+        <h3>PII fields unmarked</h3>
+        <div class="failure-before">
+          <span class="failure-label before">Without it</span>
+          <code>customer_name</code> and <code>address</code> written to the output CSV. Compliance violation. Public dashboard exposure.
+        </div>
+        <div class="failure-after">
+          <span class="failure-label after">With it</span>
+          <code>never_expose_in_outputs</code> drives column exclusion structurally. PII can't leak — the system prevents it by construction.
+        </div>
+      </div>
+      <div class="failure-card">
+        <div class="failure-number">03 / TESTS</div>
+        <h3>No validation before shipping</h3>
+        <div class="failure-before">
+          <span class="failure-label before">Without it</span>
+          Agent reports success because Python didn't raise. Grain violation and PII exposure undetected for 6 hours.
+        </div>
+        <div class="failure-after">
+          <span class="failure-label after">With it</span>
+          24 tests run before commit. Grain, PII, VIP threshold, and the metadata contract itself all validated.
+        </div>
+      </div>
+      <div class="failure-card">
+        <div class="failure-number">04 / GIT DISCIPLINE</div>
+        <h3>No audit trail</h3>
+        <div class="failure-before">
+          <span class="failure-label before">Without it</span>
+          No record of what changed, when, or why. No rollback path. Debugging at 2 AM without a map.
+        </div>
+        <div class="failure-after">
+          <span class="failure-label after">With it</span>
+          Every change attributed, timestamped, reversible. Commit message captures every engineering decision.
+        </div>
+      </div>
+      <div class="failure-card">
+        <div class="failure-number">05 / SCHEDULE METADATA</div>
+        <h3>Implicit timing dependencies</h3>
+        <div class="failure-before">
+          <span class="failure-label before">Without it</span>
+          Agent sets <code>0 6 * * *</code> without knowing inventory runs at 5:50 AM. Race condition on slow days.
+        </div>
+        <div class="failure-after">
+          <span class="failure-label after">With it</span>
+          <code>depends_on</code> is explicit. Agent reads it, recognizes the constraint is already satisfied.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- The Insight: metadata-driven code -->
+<section class="insight-section">
+  <div class="section-inner">
+    <div class="section-label">The Insight</div>
+    <h2>The YAML is the contract.<br>The Python is the engine.</h2>
+    <p class="section-lead">
+      The difference isn't documentation — it's that the pipeline reads its own contract at runtime
+      and behaves accordingly. Change the YAML, change the behavior. No code edit required.
+    </p>
+    <div class="code-demo">
+      <div class="code-panel">
+        <div class="code-panel-header before">
+          <span class="code-panel-title">BEFORE — Hardcoded</span>
+          <span class="code-panel-badge">before/pipeline.py</span>
+        </div>
+        <pre><span class="code-cm"># grain is implicit — nothing says customer-per-day</span>
+<span class="code-cm"># PII fields are unknown to the pipeline</span>
+<span class="code-cm"># threshold is a magic number buried in code</span>
+
+<span class="code-kw">def</span> <span class="code-fn">aggregate_daily_summary</span>(df):
+    summary = df.groupby([<span class="code-st">'order_date'</span>, <span class="code-st">'customer_id'</span>]).agg(
+        daily_revenue=(<span class="code-st">'amount'</span>, <span class="code-st">'sum'</span>),
+        rolling_30d_revenue=(<span class="code-st">'rolling_30d_revenue'</span>, <span class="code-st">'last'</span>),
+        stock_status=(<span class="code-st">'stock_status'</span>, <span class="code-st">'first'</span>),
+<span class="code-err">        customer_name=('customer_name', 'first'),  # PII — unknown</span>
+<span class="code-err">        address=('address', 'first'),              # PII — unknown</span>
+    ).reset_index()
+    <span class="code-kw">return</span> summary</pre>
+      </div>
+      <div class="code-panel">
+        <div class="code-panel-header after">
+          <span class="code-panel-title">AFTER — Metadata-Driven</span>
+          <span class="code-panel-badge">after/pipeline.py</span>
+        </div>
+        <pre><span class="code-cm"># metadata.yaml is the single source of truth</span>
+<span class="code-cm"># behavior is derived from it at runtime</span>
+
+<span class="code-kw">def</span> <span class="code-fn">get_output_config</span>(meta):
+<span class="code-hl">    pii = set(meta[<span class="code-st">'governance'</span>][<span class="code-st">'pii_rules'</span>][<span class="code-st">'never_expose_in_outputs'</span>])</span>
+<span class="code-hl">    fields = list(meta[<span class="code-st">'datasets'</span>][<span class="code-st">'daily_summary'</span>][<span class="code-st">'schema'</span>].keys())</span>
+    <span class="code-kw">return</span> {
+<span class="code-hl">        <span class="code-st">'grain_keys'</span>:     meta[<span class="code-st">'datasets'</span>][<span class="code-st">'daily_summary'</span>][<span class="code-st">'grain_keys'</span>],</span>
+<span class="code-hl">        <span class="code-st">'output_columns'</span>: [f <span class="code-kw">for</span> f <span class="code-kw">in</span> fields <span class="code-kw">if</span> f <span class="code-kw">not in</span> pii],</span>
+<span class="code-hl">        <span class="code-st">'vip_threshold'</span>:  meta[<span class="code-st">'datasets'</span>][<span class="code-st">'daily_summary'</span>][<span class="code-st">'schema'</span>][<span class="code-st">'is_vip_customer'</span>][<span class="code-st">'threshold'</span>],</span>
+    }</pre>
+      </div>
+    </div>
+    <div class="insight-callout">
+      <div class="insight-callout-icon">→</div>
+      <p>
+        <strong>This is the difference between documentation and a contract.</strong>
+        Documentation tells you what the pipeline does. A contract enforces it —
+        at runtime, on every run, for every agent that reads it.
+        Adding a field to <code style="color:var(--green-mid)">never_expose_in_outputs</code>
+        in the YAML automatically excludes it from every output. No code change. No agent review.
+        The system is safe by construction.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- Patterns -->
+<section class="patterns-section" id="patterns">
+  <div class="section-inner">
+    <div class="section-label">Patterns</div>
+    <h2>Minimal. Complete. Proven.</h2>
+    <p class="section-lead">
+      Each pattern is a working example system — real code, real tests, real agent interactions —
+      that answers a specific question about AI safety in data engineering.
+    </p>
+    <div class="pattern-card">
+      <div class="pattern-card-header">
+        <span class="pattern-status">Complete</span>
+        <h3>Bootstrap Standards</h3>
+      </div>
+      <div class="pattern-card-body">
+        <p>
+          <strong>Question:</strong> What's the minimum engineering baseline that makes a pipeline AI-safe?
+          <br><br>
+          A customer order processing pipeline built twice — once without discipline, once with.
+          The same agent runs the same task on both. One fails across five dimensions.
+          One succeeds. The only difference is a YAML file and a test suite.
+        </p>
+        <div class="pattern-what-changed">
+          <div class="change-item red">
+            <span class="change-icon">✗</span>
+            No schema contract → wrong grain, broken aggregations
+          </div>
+          <div class="change-item green">
+            <span class="change-icon">✓</span>
+            metadata.yaml → grain_keys drive behavior at runtime
+          </div>
+          <div class="change-item red">
+            <span class="change-icon">✗</span>
+            No governance → PII in public output
+          </div>
+          <div class="change-item green">
+            <span class="change-icon">✓</span>
+            never_expose_in_outputs → structural PII exclusion
+          </div>
+          <div class="change-item red">
+            <span class="change-icon">✗</span>
+            No tests → failures ship silently
+          </div>
+          <div class="change-item green">
+            <span class="change-icon">✓</span>
+            24 tests → metadata contract validated on every run
+          </div>
+        </div>
+        <div class="pattern-links">
+          <a href="patterns/bootstrap-standards/interactive/index.html" class="pattern-link primary">
+            Interactive Explorer →
+          </a>
+          <a href="https://github.com/MURD0X/ai-native-data-engineering/tree/main/patterns/bootstrap-standards" class="pattern-link secondary">
+            View Code
+          </a>
+          <a href="https://github.com/MURD0X/ai-native-data-engineering/blob/main/patterns/bootstrap-standards/PATTERN.md" class="pattern-link secondary">
+            Read the Pattern
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Philosophy -->
+<section class="philosophy-section" id="philosophy">
+  <div class="section-inner">
+    <div class="section-label">Philosophy</div>
+    <h2>Everything else is acceleration.</h2>
+    <div class="philosophy-grid">
+      <div class="philosophy-text">
+        <p>
+          AI agents are not uniquely dangerous. They're uniquely <strong>fast at finding gaps</strong>.
+          A pipeline without tests works fine for months under human oversight.
+          The same pipeline with an AI copilot surfaces every edge case in its first week of operation.
+        </p>
+        <p>
+          The practices in this project aren't new. Data engineers have been told to write tests,
+          document schemas, and use version control for years.
+          Most don't do it consistently because the cost of skipping them accrues slowly.
+        </p>
+        <p>
+          AI changes the economics. <strong>The corner you cut in 2023 becomes a production incident
+          in 2024 when the agent finds it.</strong>
+        </p>
+        <p>
+          You don't need a metadata platform, a data catalog, or an AI-aware orchestrator.
+          You need your pipeline to be able to answer its own questions at runtime:
+          What is my output grain? Which fields are sensitive? What does a valid output look like?
+        </p>
+        <p>
+          If it can answer those from a file it reads on startup, an agent can answer them too.
+        </p>
+      </div>
+      <div class="philosophy-principles">
+        <div class="principle">
+          <div class="principle-title">
+            <span class="principle-dot"></span>
+            Metadata drives behavior, not documentation
+          </div>
+          <p>The YAML is the contract. The Python reads it at runtime. Changing the file changes the system.</p>
+        </div>
+        <div class="principle">
+          <div class="principle-title">
+            <span class="principle-dot"></span>
+            Safe by construction, not by carefulness
+          </div>
+          <p>PII exclusion enforced structurally. Grain validated automatically. Not dependent on the agent being careful.</p>
+        </div>
+        <div class="principle">
+          <div class="principle-title">
+            <span class="principle-dot"></span>
+            The same practices protect humans and agents
+          </div>
+          <p>Git history, tests, schema contracts — these aren't AI safety tools. They're engineering. AI just needs them more urgently.</p>
+        </div>
+        <div class="principle">
+          <div class="principle-title">
+            <span class="principle-dot"></span>
+            Minimal, not maximal
+          </div>
+          <p>You don't need a full platform to start. One YAML file, a test for grain consistency, and a .gitignore is already a safer system.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta-section">
+  <div class="section-inner">
+    <h2>Start with the first pattern.</h2>
+    <p>
+      Clone the <code style="color:var(--green-mid)">after/</code> directory and use it as a template.
+      One YAML file, one test, one commit convention — that's the baseline.
+    </p>
+    <div class="cta-actions">
+      <a href="patterns/bootstrap-standards/interactive/index.html" class="btn-primary">
+        Open the Explorer →
+      </a>
+      <a href="https://github.com/MURD0X/ai-native-data-engineering" class="btn-secondary">
+        Clone on GitHub
+      </a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <p>
+    <a href="https://github.com/MURD0X/ai-native-data-engineering">AI-Native Data Systems</a>
+    · MIT License
+    · <a href="https://github.com/MURD0X/ai-native-data-engineering/blob/main/CONTRIBUTING.md">Contribute a pattern</a>
+  </p>
+</footer>
+
+</body>
+</html>
