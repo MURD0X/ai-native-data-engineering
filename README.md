@@ -14,7 +14,30 @@ Each pattern answers a specific question about how AI agents interact with data 
 
 | Pattern | Question | Status |
 |---------|----------|--------|
-| [Bootstrap Standards](patterns/bootstrap-standards/) | What's the minimum engineering baseline that makes a pipeline AI-safe? | In progress |
+| [Bootstrap Standards](patterns/bootstrap-standards/) | What's the minimum engineering baseline that makes a pipeline AI-safe? | Complete |
+
+## Quick Start
+
+```bash
+git clone https://github.com/your-org/ai-native-data-systems
+cd ai-native-data-systems
+
+# Generate sample data
+python3 scripts/generate_sample_db.py
+
+# Run the engineered pipeline
+cd patterns/bootstrap-standards/after
+pip install -r requirements.txt
+python3 pipeline.py
+
+# Run the tests
+pytest tests/ -v
+
+# Open the interactive explorer
+cd ../interactive
+python3 -m http.server 8080
+# → http://localhost:8080
+```
 
 ## Core Thesis
 
@@ -49,3 +72,7 @@ Each pattern is self-contained. To add a new pattern, copy the directory structu
 ## License
 
 MIT
+
+---
+
+*The practices that make systems safe for humans also make them safe for AI. Everything else is acceleration.*
