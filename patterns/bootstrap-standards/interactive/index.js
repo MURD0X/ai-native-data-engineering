@@ -5,7 +5,34 @@
 let DATA = null;
 let activeStep = null;
 let activeConstraint = null;
-let activeConstraintFilters = new Set();
+let codeExpanded = { before: false, after: false };
+
+// ----------------------------------------------------------------
+// Verdict content (editorial — fixed conclusions about each scenario)
+// ----------------------------------------------------------------
+
+const SCENARIO_VERDICTS = {
+  before: {
+    label: 'What actually shipped',
+    type: 'failure',
+    items: [
+      'Grain violation — is_vip_customer evaluated per order row, not per customer-day. Wrong for any customer with more than one order on the same day.',
+      'PII exposure — customer_name and address written to daily_summary.csv. A compliance violation the agent had no mechanism to detect.',
+      'Silent failure — no tests exist. Python didn\'t raise, so the agent reported success. Broken data shipped undetected.',
+      'No audit trail — the change is irreversible. No diff, no rollback path, no record of what changed or why.',
+    ],
+  },
+  after: {
+    label: 'What shipped',
+    type: 'success',
+    items: [
+      '24/24 tests pass — including test_threshold_is_configurable, which proves the metadata-driven contract itself, not just the output values.',
+      'PII excluded structurally — output_columns derived at runtime by removing pii_fields. Exclusion is enforced by the system, not hoped for.',
+      'Correct grain — VIP flag computed post-aggregation, reflecting each customer\'s actual 30-day rolling revenue for the day.',
+      'Full audit trail — commit message explains every engineering decision. The change is reversible with git revert.',
+    ],
+  },
+};
 
 // ----------------------------------------------------------------
 // Bootstrap
@@ -35,12 +62,11 @@ function buildApp() {
   return `
     ${buildFindingCallout()}
     ${buildBrief()}
-    ${buildControlsFilter()}
     <div class="section-wrap">
       <div class="section-header">
         <span class="section-eyebrow">Pipeline Comparison</span>
         <h2>Two pipelines. One agent. Identical task.</h2>
-        <p>The agent's behavior is consistent across both scenarios. The outcome is determined entirely by the engineering infrastructure.</p>
+        <p>The agent's behavior is consistent across both scenarios. The outcome is determined entirely by the engineering infrastructure present in each pipeline.</p>
       </div>
       <div class="main-grid">
         ${buildCodePanel('before')}
@@ -60,7 +86,6 @@ function buildApp() {
 function buildFindingCallout() {
   const beforeFailures = DATA.before_interaction.steps.length;
   const afterSuccesses = DATA.after_interaction.steps.length;
-  const testCount = 24;
 
   return `
     <div class="finding-callout">
@@ -84,7 +109,7 @@ function buildFindingCallout() {
           <span class="finding-stat-label">Correct outcomes<br>with engineering</span>
         </div>
         <div class="finding-stat">
-          <span class="finding-stat-value success-val">${testCount}</span>
+          <span class="finding-stat-value success-val">24</span>
           <span class="finding-stat-label">Tests validating<br>the contract</span>
         </div>
         <div class="finding-stat">
@@ -92,6 +117,7 @@ function buildFindingCallout() {
           <span class="finding-stat-label">Engineering controls<br>that made the difference</span>
         </div>
       </div>
+      <p class="finding-guide">↓ Compare the two pipelines below, then walk through each step to see exactly where the outcomes diverge.</p>
     </div>
   `;
 }
@@ -131,47 +157,56 @@ function buildBrief() {
 }
 
 // ----------------------------------------------------------------
-// Controls Filter
+// Code Panels — focused view + expand
 // ----------------------------------------------------------------
 
-function buildControlsFilter() {
-  const pills = DATA.constraints.map(c => {
-    const active = activeConstraintFilters.size === 0 || activeConstraintFilters.has(c.id);
-    return `
-      <button
-        class="constraint-pill ${active ? 'active' : 'inactive'}"
-        data-constraint-id="${c.id}"
-        title="${c.description}"
-      >
-        <span class="dot"></span>
-        ${c.name}
-        <span class="severity ${c.severity}">${c.severity}</span>
-      </button>
-    `;
-  }).join('');
-
-  return `
-    <div class="controls-filter">
-      <div class="controls-filter-label">Filter by control</div>
-      <div class="controls-filter-divider"></div>
-      <div class="constraints-list">${pills}</div>
-    </div>
-  `;
+function extractFunctionRange(lines, fnName) {
+  const startIdx = lines.findIndex(l => l.startsWith(`def ${fnName}(`));
+  if (startIdx === -1) return null;
+  let endIdx = lines.length;
+  for (let i = startIdx + 1; i < lines.length; i++) {
+    if (lines[i].match(/^(def |class |if __name__)/)) { endIdx = i; break; }
+  }
+  return { lines: lines.slice(startIdx, endIdx), startIdx };
 }
 
-// ----------------------------------------------------------------
-// Code Panels
-// ----------------------------------------------------------------
+function getFocusedLines(code, side) {
+  const lines = code.split('\n');
+  const targets = side === 'before'
+    ? ['join_inventory', 'aggregate_daily_summary']
+    : ['get_output_config', 'aggregate_daily_summary'];
+
+  const ranges = targets.map(n => extractFunctionRange(lines, n)).filter(Boolean);
+  if (ranges.length === 0) return { focused: lines, totalLines: lines.length, fnCount: 0, totalFns: 0 };
+
+  const focused = [];
+  ranges.forEach((r, i) => { if (i > 0) focused.push(''); focused.push(...r.lines); });
+
+  const totalFns = (code.match(/^def \w+/gm) || []).length;
+  return { focused, totalLines: lines.length, fnCount: targets.length, totalFns };
+}
 
 function buildCodePanel(side) {
   const d = DATA[side];
   const isAfter = side === 'after';
   const filename = isAfter ? 'after/pipeline.py' : 'before/pipeline.py';
-  const exhibitNum = isAfter ? '2' : '1';
+  const isExpanded = codeExpanded[side];
+
+  const { focused, totalLines, fnCount, totalFns } = getFocusedLines(d.code, side);
+  const displayLines = isExpanded ? d.code.split('\n') : focused;
+  const renderedCode = renderCode(displayLines.join('\n'), side);
+
+  const expandFooter = isExpanded
+    ? `<div class="code-expand-footer">
+        <button class="expand-btn" data-side="${side}">↑ Show key functions only</button>
+      </div>`
+    : `<div class="code-expand-footer">
+        <span class="code-focused-note">Showing ${fnCount} of ${totalFns} functions</span>
+        <button class="expand-btn" data-side="${side}">View full file (${totalLines} lines) ↓</button>
+      </div>`;
 
   return `
     <div class="panel">
-      <div class="panel-exhibit-label">Exhibit ${exhibitNum}</div>
       <div class="panel-header ${side}">
         <span class="panel-badge ${side}">${isAfter ? 'After' : 'Before'}</span>
         <span class="panel-title">${d.label}</span>
@@ -183,8 +218,9 @@ function buildCodePanel(side) {
         <button class="copy-btn" data-copy-side="${side}">Copy</button>
       </div>
       <div class="code-block" id="code-${side}">
-        <pre>${renderCode(d.code, side)}</pre>
+        <pre>${renderedCode}</pre>
       </div>
+      ${expandFooter}
     </div>
   `;
 }
@@ -213,20 +249,18 @@ function buildMetadataBar(d) {
 }
 
 // ----------------------------------------------------------------
-// Syntax Highlighting (lightweight)
+// Syntax Highlighting
 // ----------------------------------------------------------------
 
 function renderCode(code, side) {
-  const lines = code.split('\n');
-  return lines.map((raw, i) => {
-    const lineNum = i + 1;
+  return code.split('\n').map((raw, i) => {
     const highlighted = syntaxHighlight(raw);
-    const classes = getLineClasses(lineNum, raw, side);
-    return `<span class="line ${classes}" data-line="${lineNum}">${highlighted}</span>`;
+    const cls = getLineClasses(raw, side);
+    return `<span class="line ${cls}" data-line="${i + 1}">${highlighted}</span>`;
   }).join('\n');
 }
 
-function getLineClasses(lineNum, raw, side) {
+function getLineClasses(raw, side) {
   if (side === 'before') {
     if (raw.includes('rolling_30d_revenue') && raw.includes('5000')) return 'failure';
     if (raw.includes('customer_name') || raw.includes("'address'")) return 'failure';
@@ -255,11 +289,8 @@ function syntaxHighlight(line) {
 
 function escapeHtml(str) {
   return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 // ----------------------------------------------------------------
@@ -294,6 +325,7 @@ function buildTranscriptSection() {
               Scenario A — Unstructured Pipeline
             </div>
             ${beforeCol}
+            ${buildScenarioVerdict('before')}
           </div>
           <div class="transcript-column" id="col-after">
             <div class="transcript-col-header after">
@@ -301,9 +333,28 @@ function buildTranscriptSection() {
               Scenario B — Engineered Pipeline
             </div>
             ${afterCol}
+            ${buildScenarioVerdict('after')}
           </div>
         </div>
       </div>
+    </div>
+  `;
+}
+
+function buildScenarioVerdict(side) {
+  const v = SCENARIO_VERDICTS[side];
+  const icon = side === 'before' ? '✕' : '✓';
+  const items = v.items.map(item => `
+    <div class="verdict-item ${v.type}">
+      <span class="verdict-icon">${icon}</span>
+      <span class="verdict-text">${item}</span>
+    </div>
+  `).join('');
+
+  return `
+    <div class="verdict-card ${v.type}">
+      <div class="verdict-label">${v.label}</div>
+      ${items}
     </div>
   `;
 }
@@ -314,15 +365,15 @@ function buildStepCard(step, side) {
   const constraintName = constraint ? constraint.name : step.constraint_id;
   const stepLabel = String(step.id).padStart(2, '0');
 
-  const isFiltered = activeConstraintFilters.size > 0 && !activeConstraintFilters.has(step.constraint_id);
-  const displayStyle = isFiltered ? 'display:none' : '';
+  const isFiltered = activeConstraint && activeConstraint !== step.constraint_id;
+  const opacityStyle = isFiltered ? 'style="opacity:0.3"' : '';
 
   return `
     <div
       class="step-card ${outcome}"
       data-step-id="${side}-${step.id}"
       data-constraint-id="${step.constraint_id}"
-      style="${displayStyle}"
+      ${opacityStyle}
     >
       <div class="step-header">
         <span class="step-number ${outcome}">${stepLabel}</span>
@@ -335,7 +386,7 @@ function buildStepCard(step, side) {
       </div>
       <span class="step-constraint-tag" data-constraint-id="${step.constraint_id}">↗ ${constraintName}</span>
       <div class="step-detail" id="detail-${side}-${step.id}">
-        <p>${side === 'before' ? step.assumption_made || '' : (step.constraint_applied || '')}</p>
+        <p>${side === 'before' ? (step.assumption_made || '') : (step.constraint_applied || '')}</p>
         <div class="why ${outcome}">
           ${side === 'before' ? step.why_it_failed : step.why_it_succeeded}
         </div>
@@ -345,7 +396,7 @@ function buildStepCard(step, side) {
 }
 
 // ----------------------------------------------------------------
-// Controls Analysis (Constraint Detail)
+// Engineering Controls Analysis
 // ----------------------------------------------------------------
 
 function buildControlsAnalysis() {
@@ -381,7 +432,7 @@ function buildControlsAnalysis() {
         <div class="controls-detail-header">
           <span class="section-eyebrow">Engineering Controls</span>
           <h2>What Made the Difference</h2>
-          <p>Five practices that are non-negotiable when AI agents operate on data infrastructure. Click any card to highlight related steps above.</p>
+          <p>Five practices that are non-negotiable when AI agents operate on data infrastructure. Select a control to highlight related steps in the transcript above.</p>
         </div>
         <div class="constraint-grid">${cards}</div>
       </div>
@@ -401,7 +452,7 @@ function buildClosingStatement() {
         "Unstructured systems don't just break under AI — they amplify every gap, instantly."
       </div>
       <p class="closing-body">
-        A pipeline without tests works under human oversight for months.
+        A pipeline without tests works fine under human oversight for months.
         The same pipeline with an AI agent surfaces every edge case in its first week.
         The corner cut in 2023 becomes the production incident in 2024.
         Engineering discipline doesn't change because of AI — it becomes non-negotiable because of it.
@@ -422,61 +473,57 @@ function buildClosingStatement() {
 // ----------------------------------------------------------------
 
 function attachListeners() {
-  // Constraint filter pills
-  document.querySelectorAll('.constraint-pill').forEach(pill => {
-    pill.addEventListener('click', () => {
-      const id = pill.dataset.constraintId;
-      if (activeConstraintFilters.has(id)) {
-        activeConstraintFilters.delete(id);
-      } else {
-        activeConstraintFilters.add(id);
-      }
-      render();
-    });
-  });
-
-  // Step cards — toggle detail + highlight
+  // Step cards — expand detail
   document.querySelectorAll('.step-card').forEach(card => {
     card.addEventListener('click', () => {
-      const stepId = card.dataset.stepId;
-      const parts = stepId.split('-');
-      const side = parts[0];
-      const num  = parts[1];
+      const [side, num] = card.dataset.stepId.split('-');
       const detailEl = document.getElementById(`detail-${side}-${num}`);
+      const isOpen = card.classList.contains('active');
 
-      if (activeStep === stepId) {
-        activeStep = null;
-        detailEl && detailEl.classList.remove('visible');
-        card.classList.remove('active');
-        clearHighlights();
-      } else {
-        document.querySelectorAll('.step-card.active').forEach(c => c.classList.remove('active'));
-        document.querySelectorAll('.step-detail.visible').forEach(d => d.classList.remove('visible'));
-        clearHighlights();
+      document.querySelectorAll('.step-card.active').forEach(c => c.classList.remove('active'));
+      document.querySelectorAll('.step-detail.visible').forEach(d => d.classList.remove('visible'));
 
-        activeStep = stepId;
+      if (!isOpen) {
         card.classList.add('active');
-        detailEl && detailEl.classList.add('visible');
-        highlightConstraint(card.dataset.constraintId);
+        detailEl?.classList.add('visible');
       }
     });
   });
 
-  // Constraint tags in step cards — scroll to control card
+  // Constraint tags — scroll to control card
   document.querySelectorAll('.step-constraint-tag').forEach(tag => {
-    tag.addEventListener('click', (e) => {
+    tag.addEventListener('click', e => {
       e.stopPropagation();
       scrollToConstraint(tag.dataset.constraintId);
     });
   });
 
-  // Control cards — toggle active state and dim unrelated steps
+  // Control cards — highlight related steps
   document.querySelectorAll('[data-constraint-card]').forEach(card => {
     card.addEventListener('click', () => {
       const id = card.dataset.constraintCard;
       activeConstraint = activeConstraint === id ? null : id;
-      highlightConstraint(activeConstraint);
       render();
+      if (activeConstraint) {
+        // Scroll up to transcript so user can see the highlight
+        document.querySelector('.transcript-container')
+          ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+  });
+
+  // Code expand/collapse
+  document.querySelectorAll('.expand-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const side = btn.dataset.side;
+      const panelTop = document.getElementById(`code-${side}`)?.getBoundingClientRect().top;
+      codeExpanded[side] = !codeExpanded[side];
+      render();
+      // If collapsing, keep the panel roughly in view
+      if (!codeExpanded[side] && panelTop !== undefined) {
+        document.getElementById(`code-${side}`)
+          ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
     });
   });
 
@@ -484,8 +531,7 @@ function attachListeners() {
   document.querySelectorAll('[data-copy-side]').forEach(btn => {
     btn.addEventListener('click', () => {
       const side = btn.dataset.copySide;
-      const code = DATA[side].code;
-      navigator.clipboard.writeText(code).then(() => {
+      navigator.clipboard.writeText(DATA[side].code).then(() => {
         btn.textContent = 'Copied';
         setTimeout(() => btn.textContent = 'Copy', 1500);
       });
@@ -502,12 +548,11 @@ function setTranscriptMode(mode) {
   const body      = document.getElementById('transcript-body');
   const colBefore = document.getElementById('col-before');
   const colAfter  = document.getElementById('col-after');
-
   document.querySelectorAll('.mode-toggle button').forEach(b => b.classList.remove('active'));
 
   if (mode === 'side-by-side') {
     document.getElementById('toggle-side-by-side').classList.add('active');
-    body.style.gridTemplateColumns = '1fr 1fr';
+    body.style.gridTemplateColumns = '';
     colBefore.style.display = '';
     colAfter.style.display  = '';
   } else if (mode === 'before-only') {
@@ -523,24 +568,12 @@ function setTranscriptMode(mode) {
   }
 }
 
-function highlightConstraint(constraintId) {
-  document.querySelectorAll('.step-card').forEach(card => {
-    card.style.opacity = (!constraintId || card.dataset.constraintId === constraintId) ? '1' : '0.35';
-  });
-}
-
-function clearHighlights() {
-  document.querySelectorAll('.step-card').forEach(c => c.style.opacity = '1');
-}
-
 function scrollToConstraint(id) {
   const card = document.querySelector(`[data-constraint-card="${id}"]`);
   if (card) {
     card.scrollIntoView({ behavior: 'smooth', block: 'center' });
     card.classList.add('active');
-    setTimeout(() => {
-      if (activeConstraint !== id) card.classList.remove('active');
-    }, 2000);
+    setTimeout(() => { if (activeConstraint !== id) card.classList.remove('active'); }, 2000);
   }
 }
 
