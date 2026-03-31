@@ -16,20 +16,20 @@ const SCENARIO_VERDICTS = {
     label: 'What actually shipped',
     type: 'failure',
     items: [
-      'Grain violation — is_vip_customer evaluated per order row, not per customer-day. Wrong for any customer with more than one order on the same day.',
-      'PII exposure — customer_name and address written to daily_summary.csv. A compliance violation the agent had no mechanism to detect.',
-      'Silent failure — no tests exist. Python didn\'t raise, so the agent reported success. Broken data shipped undetected.',
-      'No audit trail — the change is irreversible. No diff, no rollback path, no record of what changed or why.',
+      '<strong>Grain violation</strong> — is_vip_customer evaluated per order row, not per customer-day. Wrong for any customer with more than one order on the same day.',
+      '<strong>PII exposure</strong> — customer_name and address written to daily_summary.csv. A compliance violation the agent had no mechanism to detect.',
+      '<strong>Silent failure</strong> — no tests exist. Python didn\'t raise, so the agent reported success. Broken data shipped undetected.',
+      '<strong>No audit trail</strong> — the change is irreversible. No diff, no rollback path, no record of what changed or why.',
     ],
   },
   after: {
     label: 'What shipped',
     type: 'success',
     items: [
-      '24/24 tests pass — including test_threshold_is_configurable, which proves the metadata-driven contract itself, not just the output values.',
-      'PII excluded structurally — output_columns derived at runtime by removing pii_fields. Exclusion is enforced by the system, not hoped for.',
-      'Correct grain — VIP flag computed post-aggregation, reflecting each customer\'s actual 30-day rolling revenue for the day.',
-      'Full audit trail — commit message explains every engineering decision. The change is reversible with git revert.',
+      '<strong>24/24 tests pass</strong> — including test_threshold_is_configurable, which proves the metadata-driven contract itself, not just the output values.',
+      '<strong>PII excluded structurally</strong> — output_columns derived at runtime by removing pii_fields. Exclusion is enforced by the system, not hoped for.',
+      '<strong>Correct grain</strong> — VIP flag computed post-aggregation, reflecting each customer\'s actual 30-day rolling revenue for the day.',
+      '<strong>Full audit trail</strong> — commit message explains every engineering decision. The change is reversible with git revert.',
     ],
   },
 };
@@ -149,7 +149,7 @@ function buildBrief() {
         </div>
         <div class="brief-meta-item">
           <span class="brief-meta-label">Business Value</span>
-          <span class="brief-meta-value" style="font-family:var(--font-sans);font-size:0.73rem;line-height:1.4">${p.business_value}</span>
+          <span class="brief-meta-value brief-meta-value--prose">${p.business_value}</span>
         </div>
       </div>
     </div>
@@ -365,15 +365,13 @@ function buildStepCard(step, side) {
   const constraintName = constraint ? constraint.name : step.constraint_id;
   const stepLabel = String(step.id).padStart(2, '0');
 
-  const isFiltered = activeConstraint && activeConstraint !== step.constraint_id;
-  const opacityStyle = isFiltered ? 'style="opacity:0.3"' : '';
+  const isDimmed = activeConstraint && activeConstraint !== step.constraint_id;
 
   return `
     <div
-      class="step-card ${outcome}"
+      class="step-card ${outcome}${isDimmed ? ' dimmed' : ''}"
       data-step-id="${side}-${step.id}"
       data-constraint-id="${step.constraint_id}"
-      ${opacityStyle}
     >
       <div class="step-header">
         <span class="step-number ${outcome}">${stepLabel}</span>
