@@ -1,0 +1,237 @@
+{
+  "pipeline": {
+    "name": "customer_order_processing",
+    "description": "Enriches raw orders with customer data, calculates rolling 30-day revenue metrics, joins inventory, and produces a daily customer summary.",
+    "business_value": "Powers daily customer reports, VIP segmentation, and inventory-aware sales dashboards.",
+    "grain": "customer_per_day",
+    "sla": "06:00 UTC daily"
+  },
+  "agent_task": "Add a new field `is_vip_customer` (true if 30-day revenue > $5000). Add it to the daily summary output, optimize the inventory join, and make sure it updates at 6 AM UTC daily.",
+  "before": {
+    "label": "Before — Unstructured",
+    "summary": "Working code, no engineering discipline. Missing schema contracts, tests, governance metadata, Git history, and scheduling context.",
+    "missing": ["schema_contract", "tests", "governance", "git", "schedule"],
+    "code": "import sqlite3\nimport pandas as pd\nfrom datetime import datetime, timedelta\n\nDB_PATH = 'orders.sqlite'\n\n\ndef load_orders():\n    conn = sqlite3.connect(DB_PATH)\n    df = pd.read_sql(\"SELECT * FROM orders\", conn)\n    conn.close()\n    return df\n\n\ndef enrich_customer_data(orders_df):\n    conn = sqlite3.connect(DB_PATH)\n    customers = pd.read_sql(\"SELECT * FROM customers\", conn)\n    conn.close()\n    return orders_df.merge(customers, on='customer_id')\n\n\ndef calculate_metrics(df):\n    df = df.copy()\n    df['order_date'] = pd.to_datetime(df['timestamp']).dt.date\n    df = df.sort_values('timestamp')\n    df['rolling_30d_revenue'] = (\n        df.groupby('customer_id')['amount']\n        .transform(lambda x: x.rolling(30, min_periods=1).sum())\n    )\n    return df\n\n\ndef join_inventory(df):\n    conn = sqlite3.connect(DB_PATH)\n    inventory = pd.read_sql(\"SELECT * FROM inventory\", conn)\n    conn.close()\n    return df.merge(inventory, on='product_id', how='left')\n\n\ndef aggregate_daily_summary(df):\n    summary = df.groupby(['order_date', 'customer_id']).agg(\n        daily_revenue=('amount', 'sum'),\n        rolling_30d_revenue=('rolling_30d_revenue', 'last'),\n        stock_status=('stock_status', 'first'),\n        customer_name=('customer_name', 'first'),\n        address=('address', 'first'),\n    ).reset_index()\n    summary = summary.rename(columns={'order_date': 'date'})\n    return summary\n\n\nif __name__ == \"__main__\":\n    orders = load_orders()\n    enriched = enrich_customer_data(orders)\n    with_metrics = calculate_metrics(enriched)\n    with_inventory = join_inventory(with_metrics)\n    summary = aggregate_daily_summary(with_inventory)\n    summary.to_csv('daily_summary.csv', index=False)\n    print(\"Done\")"
+  },
+  "after": {
+    "label": "After — Engineered",
+    "summary": "Same business logic. Added: schema contract, governance metadata, tests, logging, type hints, Git discipline.",
+    "present": ["schema_contract", "tests", "governance", "git", "schedule"],
+    "metadata_excerpt": "grain: customer_per_day\npii_fields: [customer_name, address]\ngovernance:\n  pii_rules:\n    never_expose_in_outputs: [customer_name, address, email]",
+    "code": "\"\"\"Customer Order Processing Pipeline\nGrain: customer_per_day\nMetadata: metadata.yaml\n\"\"\"\n\nimport hashlib\nimport logging\nimport sqlite3\nfrom pathlib import Path\nfrom typing import Optional\n\nimport pandas as pd\nimport yaml\n\nDB_PATH = Path(__file__).parent / 'orders.sqlite'\nMETADATA_PATH = Path(__file__).parent / 'metadata.yaml'\nOUTPUT_PATH = Path(__file__).parent / 'daily_summary.csv'\nVIP_REVENUE_THRESHOLD = 5_000.00\n\nlogging.basicConfig(level=logging.INFO)\nlog = logging.getLogger('pipeline')\n\n\ndef load_metadata() -> dict:\n    with open(METADATA_PATH) as f:\n        return yaml.safe_load(f)\n\n\ndef mask_pii(value: Optional[str]) -> Optional[str]:\n    if value is None:\n        return None\n    return hashlib.sha256(str(value).encode()).hexdigest()[:16]\n\n\ndef get_connection() -> sqlite3.Connection:\n    conn = sqlite3.connect(f'file:{DB_PATH}?mode=ro', uri=True)\n    conn.row_factory = sqlite3.Row\n    return conn\n\n\ndef load_orders() -> pd.DataFrame:\n    log.info('Loading orders from %s', DB_PATH)\n    with get_connection() as conn:\n        df = pd.read_sql(\n            'SELECT order_id, customer_id, product_id, amount, timestamp, payment_method FROM orders',\n            conn, parse_dates=['timestamp']\n        )\n    return df\n\n\ndef enrich_customer_data(orders_df: pd.DataFrame) -> pd.DataFrame:\n    \"\"\"PII NOTE: Returns DataFrame with customer_name and address.\n    These must be masked or dropped before public-facing output.\n    See metadata.yaml → governance.pii_rules\n    \"\"\"\n    log.info('Enriching orders with customer data')\n    with get_connection() as conn:\n        customers = pd.read_sql(\n            'SELECT customer_id, customer_name, address FROM customers', conn\n        )\n    return orders_df.merge(customers, on='customer_id', how='left')\n\n\ndef calculate_metrics(df: pd.DataFrame) -> pd.DataFrame:\n    log.info('Calculating revenue metrics')\n    df = df.copy()\n    df['order_date'] = df['timestamp'].dt.normalize()\n    df = df.sort_values(['customer_id', 'timestamp'])\n    df['rolling_30d_revenue'] = (\n        df.groupby('customer_id')['amount']\n        .transform(lambda x: x.rolling(30, min_periods=1).sum())\n    )\n    return df\n\n\ndef join_inventory(df: pd.DataFrame) -> pd.DataFrame:\n    log.info('Joining inventory data')\n    product_ids = df['product_id'].unique().tolist()\n    placeholders = ','.join('?' * len(product_ids))\n    with get_connection() as conn:\n        inventory = pd.read_sql(\n            f'SELECT product_id, stock_status FROM inventory WHERE product_id IN ({placeholders})',\n            conn, params=product_ids\n        )\n    result = df.merge(inventory, on='product_id', how='left')\n    result['stock_status'] = result['stock_status'].fillna('unknown')\n    return result\n\n\ndef aggregate_daily_summary(df: pd.DataFrame) -> pd.DataFrame:\n    \"\"\"Grain: customer_per_day. PII excluded per metadata.yaml governance policy.\"\"\"\n    log.info('Aggregating to customer-per-day grain')\n    summary = (\n        df.groupby(['order_date', 'customer_id'])\n        .agg(\n            daily_revenue=('amount', 'sum'),\n            rolling_30d_revenue=('rolling_30d_revenue', 'last'),\n            stock_status=('stock_status', 'first'),\n        )\n        .reset_index()\n        .rename(columns={'order_date': 'date'})\n    )\n\n    # VIP flag at correct grain (customer-per-day rolling revenue)\n    summary['is_vip_customer'] = summary['rolling_30d_revenue'] >= VIP_REVENUE_THRESHOLD\n\n    # Exclude PII per metadata.yaml → governance.pii_rules.never_expose_in_outputs\n    output_columns = [\n        'date', 'customer_id', 'daily_revenue',\n        'rolling_30d_revenue', 'stock_status', 'is_vip_customer',\n    ]\n    return summary[output_columns]\n\n\ndef validate_output(df: pd.DataFrame) -> None:\n    duplicates = df.duplicated(subset=['date', 'customer_id']).sum()\n    if duplicates > 0:\n        raise ValueError(f'Grain violation: {duplicates} duplicate (date, customer_id) rows')\n    for col in ['date', 'customer_id']:\n        if df[col].isna().sum() > 0:\n            raise ValueError(f'Null values in grain key: {col}')\n    if (df['daily_revenue'] < 0).sum() > 0:\n        raise ValueError('Negative daily_revenue found')\n    log.info('All data quality checks passed')\n\n\ndef run_pipeline() -> pd.DataFrame:\n    metadata = load_metadata()\n    log.info('Starting pipeline %s (grain: %s)', metadata['pipeline_name'], metadata['grain'])\n    orders = load_orders()\n    enriched = enrich_customer_data(orders)\n    with_metrics = calculate_metrics(enriched)\n    with_inventory = join_inventory(with_metrics)\n    summary = aggregate_daily_summary(with_inventory)\n    validate_output(summary)\n    summary.to_csv(OUTPUT_PATH, index=False)\n    log.info('Pipeline complete — %d rows written', len(summary))\n    return summary\n\n\nif __name__ == '__main__':\n    run_pipeline()"
+  },
+  "before_interaction": {
+    "steps": [
+      {
+        "id": 1,
+        "agent_intent": "Analyze the pipeline and form a plan",
+        "agent_action": "Read pipeline.py, identify where rolling_30d_revenue is computed",
+        "constraint_violated": "No schema contract — no grain definition available",
+        "assumption_made": "Rolling revenue is computed in calculate_metrics, so that's the right place to add the VIP flag",
+        "result": "failure",
+        "outcome": "Agent plans to add is_vip_customer at order level in calculate_metrics",
+        "code_location": "line 21-30",
+        "why_it_failed": "Without metadata.yaml, agent has no way to know that grain is customer_per_day. It makes a reasonable-sounding assumption that turns out to be wrong.",
+        "constraint_id": "schema_contract"
+      },
+      {
+        "id": 2,
+        "agent_intent": "Add is_vip_customer field to pipeline",
+        "agent_action": "Inserted `df['is_vip_customer'] = df['rolling_30d_revenue'] > 5000` into calculate_metrics()",
+        "constraint_violated": "No grain constraint — field added at order level, not customer-day level",
+        "assumption_made": "Order-level rolling revenue is the right basis for VIP determination",
+        "result": "failure",
+        "outcome": "VIP flag is wrong for customers with multiple orders — each order gets flagged independently based on its own rolling revenue at that moment",
+        "code_location": "line 25",
+        "why_it_failed": "Two orders from the same customer on the same day may have different rolling_30d_revenue values (as amounts accumulate). Taking 'first' in the aggregation produces an arbitrary, incorrect result.",
+        "constraint_id": "schema_contract"
+      },
+      {
+        "id": 3,
+        "agent_intent": "Preserve existing columns in aggregate_daily_summary",
+        "agent_action": "Added customer_name and address to the groupby aggregation",
+        "constraint_violated": "No governance metadata — agent unaware these are PII fields",
+        "assumption_made": "All columns present in enriched data should be preserved in output",
+        "result": "failure",
+        "outcome": "customer_name and address written to daily_summary.csv — compliance violation",
+        "code_location": "line 38-43",
+        "why_it_failed": "Without governance metadata listing sensitive fields, the agent had no signal that customer_name and address should be excluded from public-facing output.",
+        "constraint_id": "governance"
+      },
+      {
+        "id": 4,
+        "agent_intent": "Validate changes before shipping",
+        "agent_action": "No tests run — none exist",
+        "constraint_violated": "No tests — no validation possible",
+        "assumption_made": "Pipeline ran without error, so changes are correct",
+        "result": "failure",
+        "outcome": "Broken data shipped. Grain violation undetected. PII exposure undetected.",
+        "code_location": null,
+        "why_it_failed": "With no tests, the agent can only know that Python didn't throw an exception. It has no way to validate that the output matches the expected schema or that PII was excluded.",
+        "constraint_id": "tests"
+      },
+      {
+        "id": 5,
+        "agent_intent": "Set schedule to run at 6 AM UTC",
+        "agent_action": "Added comment: `# Recommended cron: 0 6 * * *`",
+        "constraint_violated": "No schedule metadata — agent unaware of upstream timing dependencies",
+        "assumption_made": "6 AM UTC is a reasonable time for a morning pipeline",
+        "result": "failure",
+        "outcome": "Agent doesn't know inventory_update runs at 5:50 AM. On slow days, 6 AM start races against inventory completion.",
+        "code_location": "line 52",
+        "why_it_failed": "No metadata captured the dependency: 'this job must run after inventory_update completes'. The timing relationship was implicit knowledge in someone's head.",
+        "constraint_id": "schedule"
+      },
+      {
+        "id": 6,
+        "agent_intent": "Commit changes to version control",
+        "agent_action": "No commit — no Git setup in pipeline directory",
+        "constraint_violated": "No Git discipline — no audit trail",
+        "assumption_made": "N/A",
+        "result": "failure",
+        "outcome": "No record of what changed, when, or why. No rollback path. No attribution.",
+        "code_location": null,
+        "why_it_failed": "The before/ directory is not under Git version control. There is no history to inspect, no diff to review, and no way to undo the changes.",
+        "constraint_id": "git"
+      }
+    ]
+  },
+  "after_interaction": {
+    "steps": [
+      {
+        "id": 1,
+        "agent_intent": "Understand the system before writing code",
+        "agent_action": "Read metadata.yaml first — identified grain, PII fields, governance rules",
+        "constraint_applied": "Schema contract: grain=customer_per_day, pii_fields=[customer_name, address]",
+        "result": "success",
+        "outcome": "Agent knows exactly where to add the VIP field and which fields to exclude from output",
+        "code_location": "metadata.yaml",
+        "why_it_succeeded": "Metadata made the grain and PII constraints explicit. Agent read them before making any assumptions.",
+        "constraint_id": "schema_contract"
+      },
+      {
+        "id": 2,
+        "agent_intent": "Confirm existing test baseline before making changes",
+        "agent_action": "Ran pytest tests/ -v — 14 passed, 4 failing (VIP tests not yet implemented)",
+        "constraint_applied": "Tests: grain and PII tests already passing — confirms baseline is correct",
+        "result": "success",
+        "outcome": "Agent has confidence that grain and PII handling are already correct. Only needs to implement VIP feature.",
+        "code_location": "tests/test_pipeline.py",
+        "why_it_succeeded": "Running tests before changes gave the agent a clean baseline. It knows what's already working and what it needs to make pass.",
+        "constraint_id": "tests"
+      },
+      {
+        "id": 3,
+        "agent_intent": "Add is_vip_customer at the correct grain",
+        "agent_action": "Added VIP flag to aggregate_daily_summary() after the groupby — at customer-per-day level",
+        "constraint_applied": "Schema contract: grain=customer_per_day → field must be added post-aggregation",
+        "result": "success",
+        "outcome": "VIP flag correctly reflects each customer's total 30-day rolling revenue for that day",
+        "code_location": "after/pipeline.py line 130-131",
+        "why_it_succeeded": "metadata.yaml made it unambiguous: grain is customer_per_day. Agent added the field after the groupby, not in calculate_metrics.",
+        "constraint_id": "schema_contract"
+      },
+      {
+        "id": 4,
+        "agent_intent": "Apply governance policy to output",
+        "agent_action": "Enforced output_columns list that excludes customer_name and address",
+        "constraint_applied": "Governance: never_expose_in_outputs: [customer_name, address, email]",
+        "result": "success",
+        "outcome": "daily_summary.csv contains no PII fields",
+        "code_location": "after/pipeline.py line 134-138",
+        "why_it_succeeded": "metadata.yaml governance rules were explicit. Agent didn't need to guess which fields were sensitive.",
+        "constraint_id": "governance"
+      },
+      {
+        "id": 5,
+        "agent_intent": "Validate changes before committing",
+        "agent_action": "Ran pytest tests/ -v — all 20 tests pass",
+        "constraint_applied": "Tests: 20 tests including grain, PII, VIP threshold, and quality gate",
+        "result": "success",
+        "outcome": "All validations pass. Change is safe to commit.",
+        "code_location": "tests/test_pipeline.py",
+        "why_it_succeeded": "Tests are the pipeline's immune system. They rejected every potential bad state before the commit was made.",
+        "constraint_id": "tests"
+      },
+      {
+        "id": 6,
+        "agent_intent": "Set schedule to 6 AM UTC",
+        "agent_action": "Read metadata.yaml schedule section — found cron already set to 0 6 * * * with documented upstream dependency",
+        "constraint_applied": "Schedule metadata: depends_on inventory_update (05:50 UTC)",
+        "result": "success",
+        "outcome": "No change needed — constraint already satisfied. Agent documented this decision in commit message.",
+        "code_location": "metadata.yaml → schedule",
+        "why_it_succeeded": "Schedule metadata made timing dependencies explicit. Agent recognized the constraint was already satisfied rather than blindly overwriting the cron.",
+        "constraint_id": "schedule"
+      },
+      {
+        "id": 7,
+        "agent_intent": "Create an auditable commit",
+        "agent_action": "Committed with full context: grain decision, PII policy reference, test count, schedule rationale",
+        "constraint_applied": "Git discipline: conventional commits with reasoning",
+        "result": "success",
+        "outcome": "Change is reversible with git revert. Future engineers and agents can understand what changed and why.",
+        "code_location": "git log",
+        "why_it_succeeded": "Git history makes changes attributable, reversible, and understandable. The commit message captures the engineering decisions that aren't visible in the code diff.",
+        "constraint_id": "git"
+      }
+    ]
+  },
+  "constraints": [
+    {
+      "id": "schema_contract",
+      "name": "Schema Contract",
+      "file": "metadata.yaml",
+      "description": "Explicit definition of output grain, field types, and constraints",
+      "key_line": "grain: customer_per_day",
+      "before_impact": "CRITICAL — agent adds is_vip_customer at order level, not customer-day level. Aggregation produces incorrect VIP flags for multi-order customers.",
+      "after_impact": "PREVENTS — agent reads grain before writing code. Field added at correct grain level. No aggregation errors.",
+      "failure_type": "wrong_grain",
+      "severity": "critical"
+    },
+    {
+      "id": "governance",
+      "name": "Governance Metadata",
+      "file": "metadata.yaml",
+      "description": "PII field classification and masking policies",
+      "key_line": "never_expose_in_outputs: [customer_name, address, email]",
+      "before_impact": "CRITICAL — agent has no signal that customer_name and address are sensitive. Both fields exposed in daily_summary.csv.",
+      "after_impact": "PREVENTS — agent reads governance rules and enforces output_columns list. No PII in output.",
+      "failure_type": "pii_exposure",
+      "severity": "critical"
+    },
+    {
+      "id": "tests",
+      "name": "Unit Tests",
+      "file": "tests/test_pipeline.py",
+      "description": "Automated validation of grain consistency, PII masking, and business logic",
+      "key_line": "def test_grain_consistency() / def test_no_pii_leakage()",
+      "before_impact": "MISSING — no tests exist. Bad changes ship silently. Grain violation and PII exposure go undetected.",
+      "after_impact": "CATCHES — 20 tests including grain, PII, VIP threshold. All pass before commit. Pipeline's immune system.",
+      "failure_type": "no_validation",
+      "severity": "high"
+    },
+    {
+      "id": "git",
+      "name": "Git Discipline",
+      "file": ".git/",
+      "description": "Version control with conventional commits and attribution",
+      "key_line": "feat: add is_vip_customer field with PII masking",
+      "before_impact": "MISSING — no version control. No audit trail. No rollback path. Debugging without a map.",
+      "after_impact": "ENABLES — every change attributed, timestamped, and reversible. Commit message captures engineering decisions.",
+      "failure_type": "no_audit_trail",
+      "severity": "high"
+    },
+    {
+      "id": "schedule",
+      "name": "Schedule Metadata",
+      "file": "metadata.yaml",
+      "description": "Explicit cron schedule with upstream timing dependencies",
+      "key_line": "depends_on: inventory_update (05:50 UTC)",
+      "before_impact": "MISSING — agent sets schedule without knowing about upstream dependencies. Race condition risk.",
+      "after_impact": "GUIDES — agent reads existing schedule and dependencies. Recognizes constraint already satisfied. No race condition.",
+      "failure_type": "timing_conflict",
+      "severity": "medium"
+    }
+  ]
+}
