@@ -380,51 +380,10 @@ body {
   color: var(--color-text-secondary);
 }
 
-.constraints-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  flex: 1;
-}
-
-.constraint-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.3rem 0.85rem 0.3rem 0.6rem;
-  border-radius: 100px;
-  font-size: 0.74rem;
-  font-weight: 500;
-  cursor: pointer;
-  border: 1px solid transparent;
-  transition: all 0.12s ease;
-  user-select: none;
+.brief-meta-value--prose {
   font-family: var(--font-sans);
-}
-
-.constraint-pill.active {
-  background: var(--color-constraint-bg);
-  border-color: var(--color-constraint-border);
-  color: var(--color-constraint);
-}
-
-.constraint-pill.inactive {
-  background: var(--color-surface-raised);
-  border-color: var(--color-border);
-  color: var(--color-text-tertiary);
-}
-
-.constraint-pill:hover {
-  box-shadow: var(--shadow-sm);
-  transform: translateY(-1px);
-}
-
-.constraint-pill .dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: currentColor;
-  flex-shrink: 0;
+  font-size: 0.73rem;
+  line-height: 1.4;
 }
 
 /* ---- Main Grid (Code Panels) ---- */
@@ -449,15 +408,6 @@ body {
   box-shadow: var(--shadow);
   display: flex;
   flex-direction: column;
-}
-
-.panel-exhibit-label {
-  font-size: 0.63rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--color-text-tertiary);
-  padding: 0.75rem 1.25rem 0;
 }
 
 .panel-header {
@@ -788,6 +738,10 @@ body {
   border-color: var(--color-primary);
   border-left-color: var(--color-primary);
   box-shadow: 0 0 0 2px rgba(15, 110, 86, 0.12);
+}
+
+.step-card.dimmed {
+  opacity: 0.28;
 }
 
 .step-header {

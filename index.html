@@ -202,8 +202,14 @@
     /* ── 5 Failures grid ─────────────────────── */
     .failures-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      grid-template-columns: repeat(3, 1fr);
       gap: 1.25rem; margin-top: 1rem;
+    }
+    @media (max-width: 900px) {
+      .failures-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 580px) {
+      .failures-grid { grid-template-columns: 1fr; }
     }
     .failure-card {
       background: var(--surface);
@@ -303,19 +309,16 @@
 
     .insight-callout {
       margin-top: 2rem; padding: 1.5rem 2rem;
-      background: rgba(15,110,86,0.15);
-      border: 1px solid rgba(52,211,153,0.2);
-      border-radius: 10px;
-      display: flex; align-items: flex-start; gap: 1rem;
-    }
-    .insight-callout-icon {
-      font-size: 1.5rem; flex-shrink: 0; margin-top: 0.1rem;
+      background: rgba(15,110,86,0.12);
+      border: 1px solid rgba(52,211,153,0.18);
+      border-left: 3px solid var(--green-mid);
+      border-radius: 0 10px 10px 0;
     }
     .insight-callout p {
-      font-size: 0.95rem; color: rgba(255,255,255,0.75);
-      line-height: 1.7;
+      font-size: 0.95rem; color: rgba(255,255,255,0.72);
+      line-height: 1.75;
     }
-    .insight-callout strong { color: var(--green-mid); }
+    .insight-callout strong { color: rgba(255,255,255,0.95); }
 
     /* ── Pattern card ────────────────────────── */
     .patterns-section { background: var(--gray-light); }
@@ -464,7 +467,7 @@
 
 <!-- Hero -->
 <section class="hero">
-  <div class="hero-eyebrow">AI-Native Data Systems</div>
+  <div class="hero-eyebrow">Pattern Library for Data Engineers</div>
   <h1>The solution isn't more AI.<br>It's <em>engineering discipline</em>.</h1>
   <p class="hero-sub">
     Unstructured data breaks AI in days, humans in months.
@@ -481,12 +484,12 @@
   </div>
   <div class="hero-stat-row">
     <div class="hero-stat">
-      <div class="hero-stat-num">5<span>×</span></div>
-      <div class="hero-stat-label">failure modes demonstrated</div>
+      <div class="hero-stat-num">6<span> failures</span></div>
+      <div class="hero-stat-label">without engineering discipline</div>
     </div>
     <div class="hero-stat">
-      <div class="hero-stat-num">2<span>×</span></div>
-      <div class="hero-stat-label">same pipeline, same agent, different outcome</div>
+      <div class="hero-stat-num">8<span> successes</span></div>
+      <div class="hero-stat-label">with engineering discipline</div>
     </div>
     <div class="hero-stat">
       <div class="hero-stat-num">24<span> tests</span></div>
@@ -494,7 +497,7 @@
     </div>
     <div class="hero-stat">
       <div class="hero-stat-num">0<span> frameworks</span></div>
-      <div class="hero-stat-label">required to make this work</div>
+      <div class="hero-stat-label">required to start</div>
     </div>
   </div>
 </section>
@@ -652,14 +655,13 @@
       </div>
     </div>
     <div class="insight-callout">
-      <div class="insight-callout-icon">→</div>
       <p>
         <strong>This is the difference between documentation and a contract.</strong>
-        Documentation tells you what the pipeline does. A contract enforces it —
-        at runtime, on every run, for every agent that reads it.
-        Adding a field to <code style="color:var(--green-mid)">never_expose_in_outputs</code>
-        in the YAML automatically excludes it from every output. No code change. No agent review.
-        The system is safe by construction.
+        Documentation tells an agent what the pipeline does. A contract enforces it —
+        at runtime, on every run. Adding a field to
+        <code style="color:var(--green-mid)">never_expose_in_outputs</code> in the YAML
+        automatically excludes it from every output. No code change. No agent review.
+        <strong>The system is safe by construction.</strong>
       </p>
     </div>
   </div>
@@ -733,7 +735,7 @@
 <section class="philosophy-section" id="philosophy">
   <div class="section-inner">
     <div class="section-label">Philosophy</div>
-    <h2>Everything else is acceleration.</h2>
+    <h2>AI doesn't create failure modes.<br>It finds yours — instantly.</h2>
     <div class="philosophy-grid">
       <div class="philosophy-text">
         <p>
