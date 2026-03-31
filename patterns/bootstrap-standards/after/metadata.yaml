@@ -96,7 +96,8 @@ datasets:
         type: string
       is_vip_customer:
         type: boolean
-        description: "True if 30-day rolling revenue exceeds $5000"
+        description: "True if 30-day rolling revenue exceeds the vip_threshold"
+        threshold: 5000.00
         added_in_version: "1.1"
         governance:
           mask_when_joined_with_pii: true

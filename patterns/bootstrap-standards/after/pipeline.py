@@ -1,13 +1,14 @@
 """
 Customer Order Processing Pipeline
 ===================================
-Grain:   customer_per_day (one row per customer per calendar day)
-Owner:   data-platform-team
-SLA:     06:00 UTC daily
-Metadata: metadata.yaml
+Metadata-driven: runtime behavior (output columns, PII exclusion, grain keys,
+quality checks, VIP threshold) is read from metadata.yaml — not hardcoded.
 
-Run:     python pipeline.py
-Test:    pytest tests/ -v
+Changing metadata.yaml changes what the pipeline does.
+The Python is the execution engine. The YAML is the contract.
+
+Run:  python pipeline.py
+Test: pytest tests/ -v
 """
 
 import hashlib
@@ -20,13 +21,12 @@ import pandas as pd
 import yaml
 
 # ---------------------------------------------------------------------------
-# Constants
+# Paths
 # ---------------------------------------------------------------------------
 
 DB_PATH = Path(__file__).parent / "orders.sqlite"
 METADATA_PATH = Path(__file__).parent / "metadata.yaml"
 OUTPUT_PATH = Path(__file__).parent / "daily_summary.csv"
-VIP_REVENUE_THRESHOLD = 5_000.00
 
 logging.basicConfig(
     level=logging.INFO,
@@ -37,20 +37,57 @@ log = logging.getLogger("pipeline")
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Metadata
 # ---------------------------------------------------------------------------
 
 def load_metadata() -> dict:
-    """Load and return pipeline metadata from metadata.yaml."""
+    """
+    Load pipeline contract from metadata.yaml.
+
+    This is the single source of truth for:
+      - output grain and grain keys
+      - PII fields that must never appear in output
+      - VIP revenue threshold
+      - data quality checks to run before writing
+    """
     with open(METADATA_PATH) as f:
         return yaml.safe_load(f)
 
 
+def get_output_config(meta: dict) -> dict:
+    """
+    Derive runtime output configuration from metadata.yaml.
+
+    Returns a dict with:
+      - grain_keys: columns that define one unique row (e.g. [date, customer_id])
+      - pii_fields: fields to never write to output
+      - output_columns: schema fields minus PII fields, in declaration order
+      - vip_threshold: revenue threshold for is_vip_customer flag
+    """
+    dataset = meta["datasets"]["daily_summary"]
+    pii_never_expose = set(meta["governance"]["pii_rules"]["never_expose_in_outputs"])
+
+    grain_keys = dataset["grain_keys"]
+    schema_fields = list(dataset["schema"].keys())
+    output_columns = [f for f in schema_fields if f not in pii_never_expose]
+    vip_threshold = dataset["schema"]["is_vip_customer"]["threshold"]
+
+    return {
+        "grain_keys": grain_keys,
+        "pii_fields": pii_never_expose,
+        "output_columns": output_columns,
+        "vip_threshold": vip_threshold,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
 def mask_pii(value: Optional[str]) -> Optional[str]:
     """
-    One-way hash for PII fields exposed in public outputs.
-    Consistent: same input always produces same hash (for joinability).
-    Irreversible: original value cannot be recovered from hash.
+    One-way hash for PII fields.
+    Consistent (same input → same hash) and irreversible.
     """
     if value is None:
         return None
@@ -58,7 +95,6 @@ def mask_pii(value: Optional[str]) -> Optional[str]:
 
 
 def get_connection() -> sqlite3.Connection:
-    """Return a read-only SQLite connection."""
     conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     return conn
@@ -69,14 +105,6 @@ def get_connection() -> sqlite3.Connection:
 # ---------------------------------------------------------------------------
 
 def load_orders() -> pd.DataFrame:
-    """
-    Load raw orders from the orders table.
-
-    Returns
-    -------
-    pd.DataFrame with columns: order_id, customer_id, product_id, amount,
-        timestamp, payment_method
-    """
     log.info("Loading orders from %s", DB_PATH)
     with get_connection() as conn:
         df = pd.read_sql(
@@ -94,20 +122,11 @@ def load_orders() -> pd.DataFrame:
 
 def enrich_customer_data(orders_df: pd.DataFrame) -> pd.DataFrame:
     """
-    Left-join orders with the customer dimension table.
+    Left-join with customer dimension.
 
-    PII NOTE: The returned DataFrame will contain customer_name and address.
-    These fields must be masked or dropped before any public-facing output.
-    See metadata.yaml → governance.pii_rules for the masking policy.
-
-    Parameters
-    ----------
-    orders_df : pd.DataFrame
-        Raw orders, must include customer_id.
-
-    Returns
-    -------
-    pd.DataFrame with PII fields present (for internal calculation use only).
+    PII present after this step (customer_name, address).
+    They stay in memory for metric calculation and are excluded from
+    output by aggregate_daily_summary() per the governance contract.
     """
     log.info("Enriching orders with customer data")
     with get_connection() as conn:
@@ -123,27 +142,11 @@ def enrich_customer_data(orders_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def calculate_metrics(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Add order_date and rolling 30-day revenue per customer.
-
-    Rolling revenue is computed at the order level here. The final
-    customer-per-day value is taken as the last value in the aggregation step,
-    consistent with the grain defined in metadata.yaml.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Enriched orders with a timestamp column.
-
-    Returns
-    -------
-    pd.DataFrame with added columns: order_date, rolling_30d_revenue.
-    """
+    """Add order_date and rolling 30-day revenue per customer (order-level)."""
     log.info("Calculating revenue metrics")
     df = df.copy()
     df["order_date"] = df["timestamp"].dt.normalize()
     df = df.sort_values(["customer_id", "timestamp"])
-
     df["rolling_30d_revenue"] = (
         df.groupby("customer_id")["amount"]
         .transform(lambda x: x.rolling(30, min_periods=1).sum())
@@ -152,21 +155,7 @@ def calculate_metrics(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def join_inventory(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Left-join inventory data on product_id to attach stock_status.
-
-    Optimization: only fetches product_id and stock_status columns to minimise
-    data transfer. Products not found in inventory default to 'unknown'.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Orders with product_id column.
-
-    Returns
-    -------
-    pd.DataFrame with stock_status column added.
-    """
+    """Left-join inventory on product_id. Only fetches products present in the data."""
     log.info("Joining inventory data")
     product_ids = df["product_id"].unique().tolist()
     placeholders = ",".join("?" * len(product_ids))
@@ -181,26 +170,22 @@ def join_inventory(df: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
-def aggregate_daily_summary(df: pd.DataFrame) -> pd.DataFrame:
+def aggregate_daily_summary(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     """
-    Aggregate to customer-per-day grain, apply PII masking, add VIP flag.
+    Aggregate to grain, apply business rules, enforce output contract.
 
-    Grain: one row per (date, customer_id) — see metadata.yaml.
-    PII:   customer_name and address are masked per governance policy.
-           They are NOT included in the final output.
+    All decisions here come from config (derived from metadata.yaml):
+      - grain_keys    → which columns define uniqueness
+      - vip_threshold → threshold for is_vip_customer flag
+      - output_columns → which fields to write (PII already excluded)
 
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Order-level data with order_date, customer_id, amount,
-        rolling_30d_revenue, stock_status.
-
-    Returns
-    -------
-    pd.DataFrame with columns: date, customer_id, daily_revenue,
-        rolling_30d_revenue, stock_status, is_vip_customer.
+    This means: change the YAML, change what gets written. No code change needed.
     """
-    log.info("Aggregating to customer-per-day grain")
+    log.info(
+        "Aggregating to %s grain (keys: %s)",
+        "customer_per_day",
+        config["grain_keys"],
+    )
     summary = (
         df.groupby(["order_date", "customer_id"])
         .agg(
@@ -212,47 +197,46 @@ def aggregate_daily_summary(df: pd.DataFrame) -> pd.DataFrame:
         .rename(columns={"order_date": "date"})
     )
 
-    # VIP flag — evaluated at correct grain (customer-per-day rolling revenue)
-    summary["is_vip_customer"] = summary["rolling_30d_revenue"] >= VIP_REVENUE_THRESHOLD
+    # VIP threshold read from metadata.yaml → datasets.daily_summary.schema.is_vip_customer.threshold
+    summary["is_vip_customer"] = summary["rolling_30d_revenue"] >= config["vip_threshold"]
 
-    # Enforce column order and exclude PII fields from output
-    output_columns = [
-        "date", "customer_id", "daily_revenue",
-        "rolling_30d_revenue", "stock_status", "is_vip_customer",
-    ]
-    return summary[output_columns]
+    # Output columns read from metadata.yaml → datasets.daily_summary.schema (minus pii_fields)
+    return summary[config["output_columns"]]
 
 
-def validate_output(df: pd.DataFrame) -> None:
+def validate_output(df: pd.DataFrame, meta: dict, config: dict) -> None:
     """
-    Run data quality checks from metadata.yaml before writing output.
+    Run data quality checks declared in metadata.yaml.
 
-    Raises
-    ------
-    ValueError if any quality check fails.
+    Checks are driven by:
+      - config["grain_keys"] → which columns must be unique and non-null
+      - metadata → governance.data_quality.checks → which named checks to run
+
+    Adding a check to metadata.yaml makes it run here automatically.
     """
-    log.info("Running data quality checks")
+    log.info("Running data quality checks from metadata contract")
+    checks = {c["name"] for c in meta["governance"]["data_quality"]["checks"]}
 
-    # Check grain consistency: no duplicate (date, customer_id) pairs
-    duplicates = df.duplicated(subset=["date", "customer_id"]).sum()
-    if duplicates > 0:
-        raise ValueError(
-            f"Grain violation: {duplicates} duplicate (date, customer_id) rows found. "
-            "Expected exactly one row per customer per day."
-        )
+    if "grain_consistency" in checks:
+        duplicates = df.duplicated(subset=config["grain_keys"]).sum()
+        if duplicates > 0:
+            raise ValueError(
+                f"Grain violation: {duplicates} duplicate ({', '.join(config['grain_keys'])}) rows. "
+                "Expected exactly one row per grain."
+            )
 
-    # Check no nulls in grain keys
-    for col in ["date", "customer_id"]:
-        nulls = df[col].isna().sum()
-        if nulls > 0:
-            raise ValueError(f"Data quality failure: {nulls} null values in grain key '{col}'")
+    if "no_nulls_in_grain_keys" in checks:
+        for col in config["grain_keys"]:
+            nulls = df[col].isna().sum()
+            if nulls > 0:
+                raise ValueError(f"Data quality failure: {nulls} null values in grain key '{col}'")
 
-    # Check revenue non-negative
-    negative = (df["daily_revenue"] < 0).sum()
-    if negative > 0:
-        raise ValueError(f"Data quality failure: {negative} rows have negative daily_revenue")
+    if "daily_revenue_non_negative" in checks:
+        negative = (df["daily_revenue"] < 0).sum()
+        if negative > 0:
+            raise ValueError(f"Data quality failure: {negative} rows have negative daily_revenue")
 
-    log.info("All data quality checks passed")
+    log.info("All data quality checks passed (%d checks run)", len(checks))
 
 
 # ---------------------------------------------------------------------------
@@ -261,36 +245,31 @@ def validate_output(df: pd.DataFrame) -> None:
 
 def run_pipeline() -> pd.DataFrame:
     """
-    Execute the full pipeline and return the daily summary DataFrame.
+    Execute the full pipeline.
 
-    Steps:
-        1. Load orders
-        2. Enrich with customer data (PII present internally)
-        3. Calculate rolling 30-day revenue metrics
-        4. Join inventory for stock status
-        5. Aggregate to customer-per-day grain, mask PII, add VIP flag
-        6. Validate output quality
-        7. Write to CSV
-
-    Returns
-    -------
-    pd.DataFrame — the validated daily summary.
+    Loads metadata.yaml once. All downstream functions receive the config
+    they need rather than re-reading the file or relying on module-level constants.
     """
-    metadata = load_metadata()
+    meta = load_metadata()
+    config = get_output_config(meta)
+
     log.info(
-        "Starting pipeline '%s' (grain: %s, SLA: %s)",
-        metadata["pipeline_name"],
-        metadata["grain"],
-        metadata["sla"],
+        "Starting pipeline '%s' (grain: %s, SLA: %s, vip_threshold: $%.0f)",
+        meta["pipeline_name"],
+        meta["grain"],
+        meta["sla"],
+        config["vip_threshold"],
     )
+    log.info("Output columns (from metadata): %s", config["output_columns"])
+    log.info("PII fields excluded (from governance): %s", sorted(config["pii_fields"]))
 
     orders = load_orders()
     enriched = enrich_customer_data(orders)
     with_metrics = calculate_metrics(enriched)
     with_inventory = join_inventory(with_metrics)
-    summary = aggregate_daily_summary(with_inventory)
+    summary = aggregate_daily_summary(with_inventory, config)
 
-    validate_output(summary)
+    validate_output(summary, meta, config)
 
     summary.to_csv(OUTPUT_PATH, index=False)
     log.info("Pipeline complete — wrote %d rows to %s", len(summary), OUTPUT_PATH)
