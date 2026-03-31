@@ -4,13 +4,15 @@ This is the same customer order processing pipeline — same business logic, sam
 
 ## What's Different
 
-| Practice | Status |
-|----------|--------|
-| Schema contract | `metadata.yaml` — grain, PII fields, data quality checks |
-| Tests | `tests/test_pipeline.py` — grain, PII, calculations |
-| Governance metadata | PII masking policy, audit rules |
-| Git discipline | Commit history, conventional commits |
-| Scheduling metadata | SLA, timing dependencies |
+| Practice | How It Works |
+|----------|-------------|
+| Schema contract | `metadata.yaml` defines grain, field types, VIP threshold — read at runtime by `get_output_config()` |
+| Governance metadata | `never_expose_in_outputs` list drives `output_columns` — PII exclusion is structural, not manual |
+| Tests | 24 tests including `test_threshold_is_configurable` — proves the metadata contract itself |
+| Git discipline | Conventional commits with rationale, agent changes attributed |
+| Schedule metadata | Cron + upstream dependencies explicit — agent reads before modifying |
+
+**The key design principle:** The YAML is the contract. The Python is the execution engine. Changing `metadata.yaml` changes runtime behavior without touching code.
 
 ## Run It
 
