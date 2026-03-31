@@ -1,0 +1,137 @@
+version: "1.0"
+pipeline_name: "customer_order_processing"
+description: "Enriches raw orders with customer data, calculates rolling revenue metrics, joins inventory, and produces a daily customer summary."
+owner: "data-platform-team"
+grain: "customer_per_day"
+sla: "06:00 UTC daily"
+
+schedule:
+  cron: "0 6 * * *"
+  timezone: "UTC"
+  depends_on:
+    - job: "inventory_update"
+      must_complete_by: "05:50 UTC"
+    - job: "customer_dimension_refresh"
+      must_complete_by: "05:45 UTC"
+  downstream:
+    - job: "daily_report_generation"
+      expects_data_by: "06:30 UTC"
+
+datasets:
+  orders:
+    description: "Raw customer orders"
+    source: "orders.sqlite::orders"
+    schema:
+      order_id:
+        type: int
+        constraints: [NOT NULL, UNIQUE]
+        grain: row_key
+      customer_id:
+        type: string
+        constraints: [NOT NULL]
+      product_id:
+        type: string
+        constraints: [NOT NULL]
+      amount:
+        type: decimal
+        constraints: [NOT NULL, "> 0"]
+      timestamp:
+        type: datetime
+        constraints: [NOT NULL]
+      payment_method:
+        type: string
+        pii: true
+
+  customers:
+    description: "Customer dimension table"
+    source: "orders.sqlite::customers"
+    schema:
+      customer_id:
+        type: string
+        constraints: [NOT NULL, UNIQUE]
+      customer_name:
+        type: string
+        pii: true
+      address:
+        type: string
+        pii: true
+      email:
+        type: string
+        pii: true
+
+  inventory:
+    description: "Product inventory levels"
+    source: "orders.sqlite::inventory"
+    schema:
+      product_id:
+        type: string
+        constraints: [NOT NULL, UNIQUE]
+      stock_status:
+        type: string
+        constraints: ["IN ('in_stock', 'low_stock', 'out_of_stock')"]
+      quantity_on_hand:
+        type: int
+        constraints: [">= 0"]
+
+  daily_summary:
+    description: "Aggregated daily summary — one row per customer per day"
+    grain: "customer_per_day"
+    grain_keys: [date, customer_id]
+    output: "daily_summary.csv"
+    pii_fields: [customer_name, address]
+    schema:
+      date:
+        type: date
+        constraints: [NOT NULL]
+      customer_id:
+        type: string
+        constraints: [NOT NULL]
+      daily_revenue:
+        type: decimal
+        constraints: [NOT NULL, ">= 0"]
+      rolling_30d_revenue:
+        type: decimal
+        constraints: [">= 0"]
+      stock_status:
+        type: string
+      is_vip_customer:
+        type: boolean
+        description: "True if 30-day rolling revenue exceeds $5000"
+        added_in_version: "1.1"
+        governance:
+          mask_when_joined_with_pii: true
+          audit_all_access: true
+
+governance:
+  pii_rules:
+    sensitive_fields: [customer_name, address, payment_method, email]
+    masking_policy: hash_in_public_views
+    audit_on_access: true
+    never_expose_in_outputs: [customer_name, address, email]
+  data_quality:
+    checks:
+      - name: no_nulls_in_grain_keys
+        fields: [date, customer_id]
+      - name: daily_revenue_non_negative
+        field: daily_revenue
+        condition: ">= 0"
+      - name: grain_consistency
+        description: "Exactly one row per (date, customer_id) in daily_summary"
+      - name: rolling_revenue_gte_daily
+        description: "rolling_30d_revenue must be >= daily_revenue for same day"
+
+lineage:
+  sources: [orders, customers, inventory]
+  transformations:
+    - name: enrich_customer_data
+      description: "Merge orders with customer dimension"
+      output_pii: true
+      note: "PII present after this step — mask before public output"
+    - name: calculate_metrics
+      description: "Compute daily revenue and 30-day rolling average per customer"
+    - name: join_inventory
+      description: "Left join inventory on product_id to get stock status"
+      optimization_hint: "Index on product_id recommended"
+    - name: aggregate_daily_summary
+      description: "Group by (date, customer_id), apply PII masking, write output"
+      output_grain: customer_per_day
