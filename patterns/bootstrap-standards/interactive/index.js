@@ -318,10 +318,10 @@ function buildConclusion() {
         the information it needed to make the right decisions.
       </p>
       <div class="links">
-        <a href="../PATTERN.md">Read the full guide →</a>
-        <a href="../before/pipeline.py">Before code</a>
-        <a href="../after/pipeline.py">After code</a>
-        <a href="../agent-run/COMPARISON.md">Full comparison</a>
+        <a href="../PATTERN.md" target="_blank" rel="noopener">Read the full guide →</a>
+        <a href="../before/pipeline.py" target="_blank" rel="noopener">Before code</a>
+        <a href="../after/pipeline.py" target="_blank" rel="noopener">After code</a>
+        <a href="../agent-run/COMPARISON.md" target="_blank" rel="noopener">Full comparison</a>
       </div>
     </div>
   `;
