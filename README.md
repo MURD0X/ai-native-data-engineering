@@ -14,6 +14,8 @@
 
 <br>
 
+🌐 **[murd0x.github.io/ai-native-data-engineering](https://murd0x.github.io/ai-native-data-engineering/)** — live site
+
 **[→ Open the Interactive Explorer](https://murd0x.github.io/ai-native-data-engineering/patterns/bootstrap-standards/interactive/index.html)** · [Read the Pattern](patterns/bootstrap-standards/PATTERN.md) · [View the Code](patterns/bootstrap-standards/)
 
 </div>
